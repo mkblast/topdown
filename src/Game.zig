@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const Io = std.Io;
 
@@ -13,6 +14,7 @@ const Vector2 = rl.Vector2;
 
 const EntityPool = @import("EntityPool.zig");
 const Entity = @import("Entity.zig");
+const LevelEditor = @import("LevelEditor.zig");
 
 io: Io,
 gpa: Allocator,
@@ -21,12 +23,13 @@ entity_pool: EntityPool,
 guy_index: Entity.Index,
 camera: rl.Camera2D,
 state: State,
+level_editor: LevelEditor,
 
 const Game = @This();
 
 pub const State = enum {
-    menu,
-    playing,
+    editor,
+    game,
 };
 
 const speed = 1000;
@@ -54,7 +57,8 @@ pub fn init(io: Io, gpa: Allocator, arena: *heap.ArenaAllocator) !Game {
         .arena = arena,
         .entity_pool = pool,
         .guy_index = guy,
-        .state = .playing,
+        .state = .game,
+        .level_editor =  try .init(),
     };
 }
 
@@ -98,50 +102,70 @@ pub fn run(self: *Game) !void {
 
                 _ = try self.entity_pool.appened(bullet);
             }
+
+            // -- Editor --
+            if (rl.isKeyPressed(.tab)) {
+                self.state = if (self.state == .editor) .game else .editor;
+            }
         }
 
         // Update:
         {
             const dt = rl.getFrameTime();
 
-            // --- Entities ---
-            for (self.entity_pool.pool.items) |*e| {
-                if (e.status != .active) continue;
-                switch (e.kind) {
-                    .guy => {
-                        e.vel = .scale(.normalize(e.dir), speed);
-                        e.applyPhysics(dt);
-                        e.dir = .zero();
-                    },
+            switch (self.state) {
+                .game => {
+                    // --- Entities ---
+                    for (self.entity_pool.pool.items) |*e| {
+                        if (e.status != .alive) continue;
+                        switch (e.kind) {
+                            .guy => {
+                                e.vel = .scale(.normalize(e.dir), speed);
+                                e.applyPhysics(dt);
+                                e.dir = .zero();
+                            },
 
-                    .bullet => {
-                        e.applyPhysics(dt);
-                        e.rot = math.atan2(e.vel.y, e.vel.x) * (180.0 / math.pi);
-                        e.life_time.update(dt);
-                        if (e.life_time.isDone()) e.status = .cleanup;
-                    },
+                            .bullet => {
+                                e.applyPhysics(dt);
+                                e.rot = math.atan2(e.vel.y, e.vel.x) * (180.0 / math.pi);
+                                e.life_time.update(dt);
+                                if (e.life_time.isDone()) e.status = .dead;
+                            },
 
-                    else => {},
-                }
-            }
+                            else => {},
+                        }
+                    }
 
-            // --- Camera ---
-            {
-                const guy = self.entity_pool.get(self.guy_index);
-                const smoothness: f32 = 20.0;
+                    // --- Camera ---
+                    {
+                        const guy = self.entity_pool.get(self.guy_index);
+                        const smoothness: f32 = 20.0;
 
-                self.camera.target.x = math.lerp(self.camera.target.x, guy.pos.x + 25, 1.0 - @exp(-smoothness * dt));
-                self.camera.target.y = math.lerp(self.camera.target.y, guy.pos.y + 25, 1.0 - @exp(-smoothness * dt));
+                        self.camera.target.x = math.lerp(self.camera.target.x, guy.pos.x + 25, 1.0 - @exp(-smoothness * dt));
+                        self.camera.target.y = math.lerp(self.camera.target.y, guy.pos.y + 25, 1.0 - @exp(-smoothness * dt));
+
+                        // rotation
+                        const mouse_pos = rl.getMousePosition();
+                        const mouse_world_pos = rl.getScreenToWorld2D(mouse_pos, self.camera);
+                        const angle = math.atan2(mouse_world_pos.y - guy.pos.y, mouse_world_pos.x - guy.pos.x);
+                        guy.rot = angle * (180.0 / math.pi);
+
+                    }
+
+                },
+
+                .editor => {
+
+                },
             }
         }
 
         // Clean:
         {
             for (self.entity_pool.pool.items, 0..) |*e, i| {
-                if (e.status != .cleanup) continue;
-                log.info("{any}", .{e.status});
+                if (e.status != .dead) continue;
                 e.kind = .default;
-                e.status = .unactive;
+                e.status = .empty;
                 try self.entity_pool.remove(.new(i));
             }
         }
@@ -161,8 +185,8 @@ pub fn run(self: *Game) !void {
                 rl.drawRectangle(10, 10, 20, 50, .white);
 
                 for (self.entity_pool.pool.items) |*e| {
-                    if (e.status != .active) continue;
-                    e.draw(self.camera);
+                    if (e.status != .alive) continue;
+                    e.draw();
                 }
             }
 
