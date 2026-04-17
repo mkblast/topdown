@@ -1,3 +1,5 @@
+const Game = @This();
+
 const builtin = @import("builtin");
 const std = @import("std");
 const Io = std.Io;
@@ -12,20 +14,18 @@ const ArrayList = std.ArrayList;
 const rl = @import("raylib");
 const Vector2 = rl.Vector2;
 
-const EntityPool = @import("EntityPool.zig");
+const EntityManager = @import("EntityManager.zig");
 const Entity = @import("Entity.zig");
 const LevelEditor = @import("LevelEditor.zig");
 
 io: Io,
 gpa: Allocator,
 arena: *heap.ArenaAllocator,
-entity_pool: EntityPool,
+entity_manager: EntityManager,
 guy_index: Entity.Index,
 camera: rl.Camera2D,
 state: State,
 level_editor: LevelEditor,
-
-const Game = @This();
 
 pub const State = enum {
     editor,
@@ -42,8 +42,8 @@ pub fn init(io: Io, gpa: Allocator, arena: *heap.ArenaAllocator) !Game {
     rl.setExitKey(.null);
     rl.setTargetFPS(60);
 
-    var pool: EntityPool = .init();
-    const guy = try pool.reserve(.guy);
+    var manager: EntityManager = try .init(gpa);
+    const guy = try manager.reserve(.guy);
 
     return .{
         .camera = .{
@@ -55,57 +55,83 @@ pub fn init(io: Io, gpa: Allocator, arena: *heap.ArenaAllocator) !Game {
         .io = io,
         .gpa = gpa,
         .arena = arena,
-        .entity_pool = pool,
+        .entity_manager = manager,
         .guy_index = guy,
         .state = .game,
-        .level_editor =  try .init(),
+        .level_editor = try .init(),
     };
 }
 
 pub fn deinit(self: *Game) void {
-    _ = self;
+    self.entity_manager.deinit(self.gpa);
     rl.closeWindow();
 }
 
 pub fn run(self: *Game) !void {
     while (!rl.windowShouldClose()) {
+        defer _ = self.arena.reset(.retain_capacity);
 
         // Input:
         {
-            const guy = self.entity_pool.get(self.guy_index);
-
-            // -- Guy --
-            if (rl.isKeyDown(.right) or rl.isKeyDown(.d)) {
-                guy.dir.x = 1;
-            }
-            if (rl.isKeyDown(.left) or rl.isKeyDown(.a)) {
-                guy.dir.x = -1;
-            }
-            if (rl.isKeyDown(.up) or rl.isKeyDown(.w)) {
-                guy.dir.y = -1;
-            }
-            if (rl.isKeyDown(.down) or rl.isKeyDown(.s)) {
-                guy.dir.y = 1;
-            }
-
-            // --- bullet ---
-            if (rl.isMouseButtonPressed(.left)) {
-                const mouse_world = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera);
-                const dir: Vector2 = .subtract(mouse_world, guy.pos);
-
-                const bullet: Entity = .{
-                    .kind = .bullet,
-                    .vel = .scale(.normalize(dir), bullet_speed),
-                    .pos = guy.pos,
-                    .life_time = .initStart(1),
-                };
-
-                _ = try self.entity_pool.appened(bullet);
-            }
-
-            // -- Editor --
+            const dt = rl.getFrameTime();
+            // -- Global --
             if (rl.isKeyPressed(.tab)) {
                 self.state = if (self.state == .editor) .game else .editor;
+            }
+
+            switch (self.state) {
+                .game => {
+                    const guy = self.entity_manager.get(self.guy_index);
+
+                    // -- Guy --
+                    if (rl.isKeyDown(.right) or rl.isKeyDown(.d)) {
+                        guy.dir.x = 1;
+                    }
+                    if (rl.isKeyDown(.left) or rl.isKeyDown(.a)) {
+                        guy.dir.x = -1;
+                    }
+                    if (rl.isKeyDown(.up) or rl.isKeyDown(.w)) {
+                        guy.dir.y = -1;
+                    }
+                    if (rl.isKeyDown(.down) or rl.isKeyDown(.s)) {
+                        guy.dir.y = 1;
+                    }
+
+                    guy.shot_cooldown.update(dt);
+
+                    // --- bullet ---
+                    if (rl.isMouseButtonDown(.left) and guy.shot_cooldown.isDone()) {
+                        const mouse_world = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera);
+                        const dir: Vector2 = .subtract(mouse_world, guy.pos);
+
+                        const bullet: Entity = .{
+                            .kind = .bullet,
+                            .vel = .scale(.normalize(dir), bullet_speed),
+                            .pos = guy.pos,
+                            .life_time = .initStart(1),
+                        };
+
+                        _ = try self.entity_manager.appened(bullet);
+                        guy.shot_cooldown.start();
+                    }
+                },
+
+                .editor => {
+                    if (rl.isKeyPressed(.h)) {
+                        self.level_editor.tile_set_showen = !self.level_editor.tile_set_showen;
+                    }
+
+                    const tile_set_size: usize = @intCast(@divTrunc((self.level_editor.tile_set.texture.width * self.level_editor.tile_set.texture.height), @as(c_int, LevelEditor.tile_size * LevelEditor.tile_size)));
+
+                    if (rl.isKeyPressed(.right)) {
+                        self.level_editor.selected_tile = (self.level_editor.selected_tile + 1) % tile_set_size;
+                    }
+
+                    if (rl.isKeyPressed(.left)) {
+                        if (self.level_editor.selected_tile == 0) self.level_editor.selected_tile = tile_set_size - 1 //
+                        else self.level_editor.selected_tile = (self.level_editor.selected_tile - 1) % tile_set_size;
+                    }
+                },
             }
         }
 
@@ -116,7 +142,7 @@ pub fn run(self: *Game) !void {
             switch (self.state) {
                 .game => {
                     // --- Entities ---
-                    for (self.entity_pool.pool.items) |*e| {
+                    for (self.entity_manager.entities.items) |*e| {
                         if (e.status != .alive) continue;
                         switch (e.kind) {
                             .guy => {
@@ -138,7 +164,7 @@ pub fn run(self: *Game) !void {
 
                     // --- Camera ---
                     {
-                        const guy = self.entity_pool.get(self.guy_index);
+                        const guy = self.entity_manager.get(self.guy_index);
                         const smoothness: f32 = 20.0;
 
                         self.camera.target.x = math.lerp(self.camera.target.x, guy.pos.x + 25, 1.0 - @exp(-smoothness * dt));
@@ -149,24 +175,20 @@ pub fn run(self: *Game) !void {
                         const mouse_world_pos = rl.getScreenToWorld2D(mouse_pos, self.camera);
                         const angle = math.atan2(mouse_world_pos.y - guy.pos.y, mouse_world_pos.x - guy.pos.x);
                         guy.rot = angle * (180.0 / math.pi);
-
                     }
-
                 },
 
-                .editor => {
-
-                },
+                .editor => {},
             }
         }
 
         // Clean:
         {
-            for (self.entity_pool.pool.items, 0..) |*e, i| {
+            for (self.entity_manager.entities.items, 0..) |*e, i| {
                 if (e.status != .dead) continue;
                 e.kind = .default;
                 e.status = .empty;
-                try self.entity_pool.remove(.new(i));
+                try self.entity_manager.remove(.new(i));
             }
         }
 
@@ -176,24 +198,32 @@ pub fn run(self: *Game) !void {
             defer rl.endDrawing();
             rl.clearBackground(.black);
 
+            switch (self.state) {
+                .game => {
+                    {
+                        self.camera.begin();
+                        defer self.camera.end();
+
+                        // refrence
+                        rl.drawRectangle(10, 10, 20, 50, .white);
+
+                        for (self.entity_manager.entities.items) |*e| {
+                            if (e.status != .alive) continue;
+                            e.draw();
+                        }
+                    }
+
+                    {
+                        // --- Screen Space (UI) ---
+                        rl.drawFPS(10, 10);
+                    }
+                },
+
+                .editor => {
+                    self.level_editor.draw();
+                },
+            }
             // --- Worldspace ---
-            {
-                self.camera.begin();
-                defer self.camera.end();
-
-                // refrence
-                rl.drawRectangle(10, 10, 20, 50, .white);
-
-                for (self.entity_pool.pool.items) |*e| {
-                    if (e.status != .alive) continue;
-                    e.draw();
-                }
-            }
-
-            {
-                // --- Screen Space (UI) ---
-                rl.drawFPS(10, 10);
-            }
         }
     }
 }

@@ -1,13 +1,16 @@
+const LevelEditor = @This();
+
+const std = @import("std");
 const rl = @import("raylib");
 
 world_map: [map_width * map_height]Tile = @splat(.{}),
 tile_set: TileSet,
+tile_set_showen: bool = true,
+selected_tile: usize = 0,
 
-const LevelEditor = @This();
-
-const map_width = 64;
-const map_height = 64;
-const tile_size = 32.0;
+pub const map_width = 64;
+pub const map_height = 64;
+pub const tile_size = 64.0;
 
 const tile_set_path = "./assets/wall_sheet.png";
 
@@ -55,4 +58,12 @@ pub fn init() !LevelEditor {
     return .{
         .tile_set = try .init(tile_set_path, tile_size),
     };
+}
+
+pub fn draw(self: LevelEditor) void {
+    if (self.tile_set_showen) {
+        const rect = self.tile_set.getSourceRect(self.selected_tile);
+        rl.drawTexture(self.tile_set.texture, 0, 0, .white);
+        rl.drawRectangleLinesEx(rect, 3, .blue);
+    }
 }

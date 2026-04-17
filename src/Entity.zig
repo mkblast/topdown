@@ -1,3 +1,5 @@
+const Entity = @This();
+
 const std = @import("std");
 const math = std.math;
 
@@ -13,9 +15,8 @@ dir: Vector2 = .zero(),
 rot: f32 = 0,
 health: u32 = 100,
 life_time: Timer = .init(0),
+shot_cooldown: Timer = .init(0.01),
 status: enum { alive, dead, empty } = .alive,
-
-const Entity = @This();
 
 pub const Index = enum(usize) {
     _,

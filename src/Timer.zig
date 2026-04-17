@@ -34,5 +34,6 @@ pub fn isDone(self: Timer) bool {
 
 pub fn progress(self: Timer) f32 {
     if (self.duration == 0) return 1.0;
-    return 1.0 - (self.remaining / self.duration);
+    const p = 1.0 - (self.remaining / self.duration);
+    return @max(0.0, @min(1.0, p));
 }
