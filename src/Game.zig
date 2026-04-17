@@ -117,19 +117,53 @@ pub fn run(self: *Game) !void {
                 },
 
                 .editor => {
+                    const level_editor = &self.level_editor;
+                    const map_width = LevelEditor.map_width;
+                    const map_height = LevelEditor.map_height;
+                    const tile_size = level_editor.tile_set.tile_size;
+                    const tile_surface = tile_size * tile_size;
+                    const tile_set_surface: u32 = @intCast(level_editor.tile_set.width * level_editor.tile_set.height);
+                    const tile_set_size = tile_set_surface / tile_surface;
+                    const tile_set_width = level_editor.tile_set.width;
+
                     if (rl.isKeyPressed(.h)) {
-                        self.level_editor.tile_set_showen = !self.level_editor.tile_set_showen;
+                        level_editor.tile_set_showen = !level_editor.tile_set_showen;
                     }
 
-                    const tile_set_size: usize = @intCast(@divTrunc((self.level_editor.tile_set.texture.width * self.level_editor.tile_set.texture.height), @as(c_int, LevelEditor.tile_size * LevelEditor.tile_size)));
-
                     if (rl.isKeyPressed(.right)) {
-                        self.level_editor.selected_tile = (self.level_editor.selected_tile + 1) % tile_set_size;
+                        level_editor.selected_texture = (level_editor.selected_texture + 1) % tile_set_size;
                     }
 
                     if (rl.isKeyPressed(.left)) {
-                        if (self.level_editor.selected_tile == 0) self.level_editor.selected_tile = tile_set_size - 1 //
-                        else self.level_editor.selected_tile = (self.level_editor.selected_tile - 1) % tile_set_size;
+                        if (level_editor.selected_texture == 0) level_editor.selected_texture = tile_set_size - 1 //
+                        else level_editor.selected_texture = (level_editor.selected_texture - 1) % tile_set_size;
+                    }
+
+                    if (rl.isKeyPressed(.down)) {
+                        level_editor.selected_texture = (level_editor.selected_texture + tile_set_width) % tile_set_size;
+                    }
+
+                    if (rl.isKeyPressed(.up)) {
+                        if (level_editor.selected_texture < tile_set_width) level_editor.selected_texture = (tile_set_size - tile_set_width) +  level_editor.selected_texture //
+                        else level_editor.selected_texture = (level_editor.selected_texture - tile_set_width) % tile_set_size;
+                    }
+
+                    if (rl.isMouseButtonDown(.left)) {
+                        const mouse_pos = rl.getMousePosition();
+                        const mouse_x: u32 = @trunc(mouse_pos.x);
+                        const mouse_y: u32 = @trunc(mouse_pos.y);
+                        const x: usize = mouse_x / tile_size;
+                        const cord_y: usize = mouse_y / tile_size;
+                        if (x < map_width and cord_y < map_height) {
+                            const y =  mouse_y / tile_size * map_height;
+                            level_editor.world_map[x + y] = .{ .texture_id = level_editor.selected_texture, .kind = .wall };
+                        }
+                    }
+
+                    if (rl.isKeyPressed(.s)) {
+                        var allocating: Io.Writer.Allocating = .init(self.arena.allocator());
+                        try std.zon.stringify.serialize(self.level_editor.world_map, .{}, &allocating.writer);
+                        std.debug.print("{s}", .{allocating.written()});
                     }
                 },
             }
@@ -213,6 +247,7 @@ pub fn run(self: *Game) !void {
                         }
                     }
 
+                    // --- Worldspace ---
                     {
                         // --- Screen Space (UI) ---
                         rl.drawFPS(10, 10);
@@ -223,7 +258,6 @@ pub fn run(self: *Game) !void {
                     self.level_editor.draw();
                 },
             }
-            // --- Worldspace ---
         }
     }
 }
