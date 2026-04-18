@@ -27,6 +27,7 @@ guy_index: Entity.Index,
 camera: rl.Camera2D,
 state: State,
 level_editor: LevelEditor,
+level: LevelEditor.TileMap,
 
 pub const State = enum {
     editor,
@@ -62,12 +63,14 @@ pub fn init(io: Io, gpa: Allocator, arena: *heap.ArenaAllocator) !Game {
         .guy_index = guy,
         .state = .game,
         .level_editor = try .init(gpa, "./assets/wall_sheet.png", 64, 16, 16),
+        .level = try .initFromFile(io, gpa, arena.allocator(), "./map.zon"),
     };
 }
 
 pub fn deinit(self: *Game) void {
     self.entity_manager.deinit(self.gpa);
     self.level_editor.deinit(self.gpa);
+    std.zon.parse.free(self.gpa, self.level);
     textures.deinit(self.gpa);
     rl.closeWindow();
 }
@@ -82,6 +85,8 @@ pub fn run(self: *Game) !void {
             // -- Global --
             if (rl.isKeyPressed(.tab)) {
                 self.state = if (self.state == .editor) .game else .editor;
+                const guy = self.entity_manager.get(self.guy_index);
+                self.level_editor.camera_target = guy.pos;
             }
 
             switch (self.state) {
@@ -123,6 +128,23 @@ pub fn run(self: *Game) !void {
 
                 .editor => {
                     const level_editor = &self.level_editor;
+
+                    var dir: Vector2 = .zero();
+                    if (rl.isKeyDown(.d)) {
+                        dir.x = 1;
+                    }
+                    if (rl.isKeyDown(.a)) {
+                        dir.x = -1;
+                    }
+                    if (rl.isKeyDown(.w)) {
+                        dir.y = -1;
+                    }
+                    if (rl.isKeyDown(.s)) {
+                        dir.y = 1;
+                    }
+
+                    level_editor.camera_target = .add(level_editor.camera_target, .scale(.normalize(dir), 10));
+
                     if (level_editor.tile_map) |tile_map| {
                         const map_width = tile_map.width;
                         const map_height = tile_map.height;
@@ -155,23 +177,26 @@ pub fn run(self: *Game) !void {
                         }
 
                         if (rl.isMouseButtonDown(.left)) {
-                            const mouse_pos = rl.getMousePosition();
-                            const mouse_x: u32 = @trunc(mouse_pos.x);
-                            const mouse_y: u32 = @trunc(mouse_pos.y);
-                            const x: usize = mouse_x / tile_size;
-                            const cord_y: usize = mouse_y / tile_size;
-                            if (x < map_width and cord_y < map_height) {
-                                const y = mouse_y / tile_size * map_height;
-                                tile_map.tiles[x + y] = .{ .texture_id = level_editor.selected_texture, .kind = .wall };
+                            const world_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera);
+                            if (world_pos.x >= 0 and world_pos.y >= 0) {
+                                const mouse_x: u32 = @trunc(world_pos.x);
+                                const mouse_y: u32 = @trunc(world_pos.y);
+                                const gx = mouse_x / tile_size;
+                                const gy = mouse_y / tile_size;
+                                if (gx < map_width and gy < map_height) {
+                                    const y = gy * map_height;
+                                    tile_map.tiles[gx + y] = .{ .texture_id = level_editor.selected_texture, .kind = .wall };
+                                }
                             }
                         }
 
-                        if (rl.isKeyPressed(.s)) {
+                        if (rl.isKeyPressed(.enter)) {
                             var buf: [2048]u8 = undefined;
                             var save_file = try Io.Dir.cwd().createFile(self.io, "map.zon", .{});
                             var file_writer = save_file.writer(self.io, &buf);
                             try std.zon.stringify.serialize(tile_map, .{}, &file_writer.interface);
                             try file_writer.flush();
+                            log.info("Map Saved", .{});
                         }
                     }
                 },
@@ -199,7 +224,6 @@ pub fn run(self: *Game) !void {
                                 e.dir = .zero();
                                 if (e.pos.x < 0) e.pos.x = 0;
                                 if (e.pos.y < 0) e.pos.y = 0;
-                                log.info("{any}", .{e.pos});
                             },
 
                             .bullet => {
@@ -229,7 +253,9 @@ pub fn run(self: *Game) !void {
                     }
                 },
 
-                .editor => {},
+                .editor => {
+                    self.camera.target = self.level_editor.camera_target;
+                },
             }
         }
 
@@ -249,33 +275,41 @@ pub fn run(self: *Game) !void {
             defer rl.endDrawing();
             rl.clearBackground(.black);
 
-            switch (self.state) {
-                .game => {
-                    {
-                        self.camera.begin();
-                        defer self.camera.end();
+            {
+                self.camera.begin();
+                defer self.camera.end();
+                if (self.level_editor.tile_map) |tile_map| {
+                    const rect: rl.Rectangle = .{
+                        .x = 0,
+                        .y = 0,
+                        .width = @floatFromInt(tile_map.width * tile_map.tile_set.tile_size),
+                        .height = @floatFromInt(tile_map.height * tile_map.tile_set.tile_size),
+                    };
+                    rl.drawRectangleLinesEx(rect, 3, .white);
+                }
+            }
 
-                        // refrence
-                        rl.drawRectangle(10, 10, 20, 50, .white);
+            if (self.state == .editor) {
+                self.level_editor.draw(self.camera);
+            }
 
-                        for (self.entity_manager.entities.items) |*e| {
-                            if (e.status != .alive) continue;
-                            e.draw();
-                        }
+            {
+                self.camera.begin();
+                defer self.camera.end();
 
-                        rl.drawRectangleLinesEx(.init(0, 0, 1280, 720), 3, .white);
-                    }
+                self.level.draw();
 
-                    // --- Worldspace ---
-                    {
-                        // --- Screen Space (UI) ---
-                        rl.drawFPS(10, 10);
-                    }
-                },
+                // -- entities --
+                for (self.entity_manager.entities.items) |*e| {
+                    if (e.status != .alive) continue;
+                    e.draw();
+                }
+            }
 
-                .editor => {
-                    self.level_editor.draw();
-                },
+            // --- Worldspace ---
+            {
+                // --- Screen Space (UI) ---
+                rl.drawFPS(10, 10);
             }
         }
     }

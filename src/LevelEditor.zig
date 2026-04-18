@@ -1,6 +1,8 @@
 const LevelEditor = @This();
 
 const std = @import("std");
+const Io = std.Io;
+
 const Allocator = std.mem.Allocator;
 
 const rl = @import("raylib");
@@ -11,6 +13,7 @@ const Vector2 = rl.Vector2;
 tile_map: ?TileMap = null,
 tile_set_showen: bool = true,
 selected_texture: u32 = 0,
+camera_target: Vector2 = .zero(),
 
 pub const Kind = enum {
     empty,
@@ -25,7 +28,7 @@ pub const Tile = struct {
     const default: Tile = .{ .kind = .empty, .texture_id = 0 };
 };
 
-const TileMap = struct {
+pub const TileMap = struct {
     tile_set: TileSet,
     width: u32,
     height: u32,
@@ -42,12 +45,30 @@ const TileMap = struct {
         };
     }
 
-    fn deinit(self: *TileMap, gpa: Allocator) void {
+    pub fn initFromFile(io: Io, gpa: Allocator, arena: Allocator, path: []const u8) !TileMap {
+        const content = try Io.Dir.cwd().readFileAllocOptions(io, path, arena, .unlimited, .of(u8), 0);
+        const zon = try std.zon.parse.fromSliceAlloc(TileMap, gpa, content, null, .{});
+        return zon;
+    }
+
+    pub fn deinit(self: *TileMap, gpa: Allocator) void {
         gpa.free(self.tiles);
+    }
+
+    pub fn draw(self: TileMap) void {
+        const texture = Game.textures.get(self.tile_set.path).?;
+        const tile_size = self.tile_set.tile_size;
+
+        for (self.tiles, 0..) |tile, i| {
+            if (tile.kind == .empty) continue;
+            const pos: Vector2 = .init(@floatFromInt((i % self.width) * tile_size), @floatFromInt((i / self.width) * self.tile_set.tile_size));
+            const texture_rectid = self.tile_set.getSourceRect(tile.texture_id);
+            texture.drawRec(texture_rectid, pos, .white);
+        }
     }
 };
 
-const TileSet = struct {
+pub const TileSet = struct {
     path: []const u8,
     tile_size: u32,
     width: u32,
@@ -92,31 +113,32 @@ pub fn deinit(self: *LevelEditor, gpa: Allocator) void {
     }
 }
 
-pub fn draw(self: LevelEditor) void {
+pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
     if (self.tile_map) |tile_map| {
-        const tile_size = tile_map.tile_set.tile_size;
-        const texture = Game.textures.get(tile_map.tile_set.path).?;
+        {
+            camera.begin();
+            defer camera.end();
 
-        for (tile_map.tiles, 0..) |tile, i| {
-            if (tile.kind == .empty) continue;
-            const pos: Vector2 = .init(@floatFromInt((i % tile_map.width) * tile_size), @floatFromInt((i / tile_map.width) * tile_map.tile_set.tile_size));
-            const texture_rectid = tile_map.tile_set.getSourceRect(tile.texture_id);
-            texture.drawRec(texture_rectid, pos, .white);
+            tile_map.draw();
+
+            const tile_size = tile_map.tile_set.tile_size;
+            const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), camera);
+            if (mouse_pos.x >= 0 and mouse_pos.y >= 0) {
+                const mouse_x: u32 = @trunc(mouse_pos.x);
+                const mouse_y: u32 = @trunc(mouse_pos.y);
+                const hovered: rl.Rectangle = .{
+                    .x = @floatFromInt(mouse_x / tile_size * tile_size),
+                    .y = @floatFromInt(mouse_y / tile_size * tile_size),
+                    .width = @floatFromInt(tile_size),
+                    .height = @floatFromInt(tile_size),
+                };
+
+                rl.drawRectangleLinesEx(hovered, 3, .sky_blue);
+            }
         }
 
-        const mouse_pos = rl.getMousePosition();
-        const mouse_x: u32 = @trunc(mouse_pos.x);
-        const mouse_y: u32 = @trunc(mouse_pos.y);
-        const hovered: rl.Rectangle = .{
-            .x = @floatFromInt(mouse_x / tile_size * tile_size),
-            .y = @floatFromInt(mouse_y / tile_size * tile_size),
-            .width = @floatFromInt(tile_size),
-            .height = @floatFromInt(tile_size),
-        };
-
-        rl.drawRectangleLinesEx(hovered, 3, .sky_blue);
-
         if (self.tile_set_showen) {
+            const texture = Game.textures.get(tile_map.tile_set.path).?;
             const rect = tile_map.tile_set.getSourceRect(self.selected_texture);
             rl.drawTexture(texture, 0, 0, .white);
             rl.drawRectangleLinesEx(rect, 3, .blue);
