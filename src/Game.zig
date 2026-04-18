@@ -92,7 +92,7 @@ pub fn run(self: *Game) !void {
                         self.state = .editor;
                     },
                     .editor => {
-                        self.level_editor = try .initFromFile(self.io, self.gpa, "map.zon");
+                        try self.level_editor.reload(self.io, "map.zon");
                         std.zon.parse.free(self.gpa, self.level);
                         self.level = try .initFromFile(self.io, self.gpa, self.arena.allocator(), "map.zon");
                         self.state = .game;

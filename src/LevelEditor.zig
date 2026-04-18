@@ -119,6 +119,12 @@ pub fn initFromFile(io: Io, gpa: Allocator, path: []const u8) !LevelEditor {
     return leve_editor;
 }
 
+pub fn reload(self: *LevelEditor, io: Io, path: []const u8) !void {
+    _ = self.arena.reset(.retain_capacity);
+    const arena = self.arena.allocator();
+    self.tile_map = try .initFromFile(io, arena, arena, path);
+}
+
 pub fn deinit(self: *LevelEditor) void {
     self.arena.deinit();
 }
