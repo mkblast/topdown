@@ -10,6 +10,7 @@ const Game = @import("Game.zig");
 
 const Vector2 = rl.Vector2;
 
+arena: std.heap.ArenaAllocator,
 tile_map: ?TileMap = null,
 tile_set_showen: bool = true,
 selected_texture: u32 = 0,
@@ -35,10 +36,10 @@ pub const TileMap = struct {
     tiles: []Tile,
 
     fn init(gpa: Allocator, path: [:0]const u8, tile_size: u32, width: u32, height: u32) !TileMap {
-        const tiles = try gpa.alloc(Tile, @intCast(width * height));
+        const tiles = try gpa.alloc(Tile, width * height);
         @memset(tiles, .default);
         return .{
-            .tile_set = try .init(gpa, path, tile_size),
+            .tile_set = try .init(path, tile_size),
             .width = width,
             .height = height,
             .tiles = tiles,
@@ -74,9 +75,9 @@ pub const TileSet = struct {
     width: u32,
     height: u32,
 
-    pub fn init(gpa: Allocator, path: [:0]const u8, size: u32) !TileSet {
+    pub fn init(path: [:0]const u8, size: u32) !TileSet {
         const tex: rl.Texture2D = try .init(path);
-        try Game.textures.put(gpa, path, tex);
+        try Game.textures.put(path, tex);
 
         const width: u32 = @intCast(tex.width);
         const height: u32 = @intCast(tex.height);
@@ -102,15 +103,24 @@ pub const TileSet = struct {
 };
 
 pub fn init(gpa: Allocator, path: [:0]const u8, tile_size: u32, width: u32, height: u32) !LevelEditor {
-    return .{
-        .tile_map = try .init(gpa, path, tile_size, width, height),
+    var leve_editor: LevelEditor = .{
+        .arena = .init(gpa),
     };
+    leve_editor.tile_map = try .init(leve_editor.arena.allocator(), path, tile_size, width, height);
+    return leve_editor;
 }
 
-pub fn deinit(self: *LevelEditor, gpa: Allocator) void {
-    if (self.tile_map) |*tile_map| {
-        tile_map.deinit(gpa);
-    }
+pub fn initFromFile(io: Io, gpa: Allocator, path: []const u8) !LevelEditor {
+    var leve_editor: LevelEditor = .{
+        .arena = .init(gpa),
+    };
+    const arena = leve_editor.arena.allocator();
+    leve_editor.tile_map = try .initFromFile(io, arena, arena, path);
+    return leve_editor;
+}
+
+pub fn deinit(self: *LevelEditor) void {
+    self.arena.deinit();
 }
 
 pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {

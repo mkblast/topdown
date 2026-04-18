@@ -34,7 +34,7 @@ pub const State = enum {
     game,
 };
 
-pub var textures: StringHashMap(rl.Texture2D) = .empty;
+pub var textures: std.StringHashMap(rl.Texture2D) = undefined;
 
 const speed = 1000;
 const bullet_speed = 2500.0;
@@ -46,6 +46,7 @@ pub fn init(io: Io, gpa: Allocator, arena: *heap.ArenaAllocator) !Game {
     rl.setExitKey(.null);
     rl.setTargetFPS(60);
 
+    textures = .init(gpa);
     var manager: EntityManager = try .init(gpa);
     const guy = try manager.reserve(.guy);
 
@@ -69,9 +70,9 @@ pub fn init(io: Io, gpa: Allocator, arena: *heap.ArenaAllocator) !Game {
 
 pub fn deinit(self: *Game) void {
     self.entity_manager.deinit(self.gpa);
-    self.level_editor.deinit(self.gpa);
+    self.level_editor.deinit();
     std.zon.parse.free(self.gpa, self.level);
-    textures.deinit(self.gpa);
+    textures.deinit();
     rl.closeWindow();
 }
 
@@ -84,9 +85,19 @@ pub fn run(self: *Game) !void {
             const dt = rl.getFrameTime();
             // -- Global --
             if (rl.isKeyPressed(.tab)) {
-                self.state = if (self.state == .editor) .game else .editor;
-                const guy = self.entity_manager.get(self.guy_index);
-                self.level_editor.camera_target = guy.pos;
+                switch (self.state) {
+                    .game => {
+                        const guy = self.entity_manager.get(self.guy_index);
+                        self.level_editor.camera_target = guy.pos;
+                        self.state = .editor;
+                    },
+                    .editor => {
+                        self.level_editor = try .initFromFile(self.io, self.gpa, "map.zon");
+                        std.zon.parse.free(self.gpa, self.level);
+                        self.level = try .initFromFile(self.io, self.gpa, self.arena.allocator(), "map.zon");
+                        self.state = .game;
+                    },
+                }
             }
 
             switch (self.state) {
