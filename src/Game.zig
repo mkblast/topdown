@@ -155,6 +155,7 @@ pub fn run(self: *Game) !void {
                 .editor => {
                     const level_editor = &self.level_editor;
                     if (rl.isKeyPressed(.n)) {
+                        level_editor.deinit();
                         try level_editor.initLevel(self.gpa, "map.zon", 64, 64);
                         try level_editor.addTileSet("./assets/wall_sheet.png", 64);
                     }

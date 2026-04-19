@@ -45,10 +45,9 @@ pub fn addTileSet(self: *LevelEditor, tile_set_path: [:0]const u8, tile_size: u3
         const texture: rl.Texture2D = try .init(tile_set_path);
         try level.textures.put(arena, tile_set_path, texture);
 
-        var tile_sets: ArrayList(TileSet) = .fromOwnedSlice(level.tile_map.tile_sets);
-        try tile_sets.append(arena, .init(texture, tile_set_path, tile_size));
-
-        level.tile_map.tile_sets = try tile_sets.toOwnedSlice(arena);
+        const old_len = level.tile_map.tile_sets.len;
+        level.tile_map.tile_sets = try arena.realloc(level.tile_map.tile_sets, old_len + 1);
+        level.tile_map.tile_sets[old_len] = .init(texture, tile_set_path, tile_size);
     }
 }
 
