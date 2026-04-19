@@ -3,149 +3,89 @@ const LevelEditor = @This();
 const std = @import("std");
 const Io = std.Io;
 
+const log = std.log;
+
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
 const rl = @import("raylib");
 const Game = @import("Game.zig");
 
+const Level = @import("Level.zig");
+const TileSet = Level.TileSet;
+
 const Vector2 = rl.Vector2;
 
-arena: std.heap.ArenaAllocator,
-tile_map: ?TileMap = null,
-tile_set_showen: bool = true,
-selected_texture: u32 = 0,
-selected_tile_set: u32 = 0,
-camera_target: Vector2 = .zero(),
+level: ?Level,
+tile_set_showen: bool,
+selected_texture: u32,
+selected_tile_set: u32,
+camera_target: Vector2,
 
-pub const Kind = enum {
-    empty,
-    floor,
-    wall,
+pub const default: LevelEditor = .{
+    .level = null,
+    .tile_set_showen = true,
+    .selected_texture = 0,
+    .selected_tile_set = 0,
+    .camera_target = .zero(),
 };
 
-pub const Tile = struct {
-    texture_id: u32,
-    tile_set_id: u32,
-    kind: Kind,
-
-    const default: Tile = .{ .kind = .empty, .texture_id = 0, .tile_set_id = 0 };
-};
-
-pub const TileMap = struct {
-    tile_sets: ArrayList(TileSet),
-    width: u32,
-    height: u32,
-    tiles: []Tile,
-
-    fn init(gpa: Allocator, path: [:0]const u8, tile_size: u32, width: u32, height: u32) !TileMap {
-        var tile_sets: ArrayList(TileSet) = .empty;
-        try tile_sets.append(gpa, try .init(path, tile_size));
-
-        const tiles = try gpa.alloc(Tile, width * height);
-        @memset(tiles, .default);
-        return .{
-            .tile_sets = tile_sets,
-            .width = width,
-            .height = height,
-            .tiles = tiles,
-        };
-    }
-
-    pub fn initFromFile(io: Io, gpa: Allocator, arena: Allocator, path: []const u8) !TileMap {
-        const content = try Io.Dir.cwd().readFileAllocOptions(io, path, arena, .unlimited, .of(u8), 0);
-        const zon = try std.zon.parse.fromSliceAlloc(TileMap, gpa, content, null, .{});
-        return zon;
-    }
-
-    pub fn deinit(self: *TileMap, gpa: Allocator) void {
-        gpa.free(self.tiles);
-    }
-
-    pub fn draw(self: TileMap) void {
-        for (self.tiles, 0..) |tile, i| {
-            if (tile.kind == .empty) continue;
-            const tile_set = self.tile_sets.items[tile.tile_set_id];
-
-            const texture = Game.textures.get(tile_set.path).?;
-            const tile_size = tile_set.tile_size;
-
-            const pos: Vector2 = .init(@floatFromInt((i % self.width) * tile_size), @floatFromInt((i / self.width) * tile_set.tile_size));
-            const texture_rectid = tile_set.getSourceRect(tile.texture_id);
-            texture.drawRec(texture_rectid, pos, .white);
-        }
-    }
-};
-
-pub const TileSet = struct {
-    path: []const u8,
-    tile_size: u32,
-    width: u32,
-    height: u32,
-
-    pub fn init(path: [:0]const u8, size: u32) !TileSet {
-        const tex: rl.Texture2D = try .init(path);
-        try Game.textures.put(path, tex);
-
-        const width: u32 = @intCast(tex.width);
-        const height: u32 = @intCast(tex.height);
-        return .{
-            .path = path,
-            .tile_size = size,
-            .width = width / size,
-            .height = height / size,
-        };
-    }
-
-    pub fn getSourceRect(self: TileSet, id: u32) rl.Rectangle {
-        const col = id % self.width;
-        const row = id / self.width;
-
-        return .{
-            .x = @floatFromInt(col * self.tile_size),
-            .y = @floatFromInt(row * self.tile_size),
-            .width = @floatFromInt(self.tile_size),
-            .height = @floatFromInt(self.tile_size),
-        };
-    }
-};
-
-pub fn init(gpa: Allocator, path: [:0]const u8, tile_size: u32, width: u32, height: u32) !LevelEditor {
-    var leve_editor: LevelEditor = .{
-        .arena = .init(gpa),
-    };
-    leve_editor.tile_map = try .init(leve_editor.arena.allocator(), path, tile_size, width, height);
-    return leve_editor;
+pub fn initLevel(self: *LevelEditor, gpa: Allocator, save_path: [:0]const u8, width: u32, height: u32) !void {
+    self.level = try .init(gpa, save_path, width, height);
 }
 
-pub fn initFromFile(io: Io, gpa: Allocator, path: []const u8) !LevelEditor {
-    var leve_editor: LevelEditor = .{
-        .arena = .init(gpa),
-    };
-    const arena = leve_editor.arena.allocator();
-    leve_editor.tile_map = try .initFromFile(io, arena, arena, path);
-    return leve_editor;
+pub fn loadLevelFromFile(self: *LevelEditor, io: Io, gpa: Allocator, save_path: [:0]const u8) !void {
+    self.level = try .initFromFile(io, gpa, save_path);
 }
 
-pub fn reload(self: *LevelEditor, io: Io, path: []const u8) !void {
-    _ = self.arena.reset(.retain_capacity);
-    const arena = self.arena.allocator();
-    self.tile_map = try .initFromFile(io, arena, arena, path);
+pub fn addTileSet(self: *LevelEditor, tile_set_path: [:0]const u8, tile_size: u32) !void {
+    if (self.level) |*level| {
+        const arena = level.arena.allocator();
+
+        const texture: rl.Texture2D = try .init(tile_set_path);
+        try level.textures.put(arena, tile_set_path, texture);
+
+        var tile_sets: ArrayList(TileSet) = .fromOwnedSlice(level.tile_map.tile_sets);
+        try tile_sets.append(arena, .init(texture, tile_set_path, tile_size));
+
+        level.tile_map.tile_sets = try tile_sets.toOwnedSlice(arena);
+    }
+}
+
+
+pub fn saveLevel(self: LevelEditor, io: Io) !void {
+    if (self.level) |level| {
+        var buf: [2048]u8 = undefined;
+        var save_file = try Io.Dir.cwd().createFile(io, level.path, .{});
+        var file_writer = save_file.writer(io, &buf);
+        try std.zon.stringify.serialize(level.tile_map, .{}, &file_writer.interface);
+        try file_writer.flush();
+        log.info("Map Saved", .{});
+    }
+}
+
+
+pub fn reload(self: *LevelEditor, io: Io) !void {
+    if (self.level) |*level| {
+        try level.reload(io);
+    }
 }
 
 pub fn deinit(self: *LevelEditor) void {
-    self.arena.deinit();
+    if (self.level) |*level| {
+        level.deinit();
+    }
 }
 
 pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
-    if (self.tile_map) |tile_map| {
+    if (self.level) |level| {
         {
             camera.begin();
             defer camera.end();
 
-            tile_map.draw();
+            level.draw();
 
-            const tile_set = tile_map.tile_sets.items[self.selected_tile_set];
+            const tile_set = level.tile_map.tile_sets[self.selected_tile_set];
             const tile_size = tile_set.tile_size;
             const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), camera);
             if (mouse_pos.x >= 0 and mouse_pos.y >= 0) {
@@ -163,8 +103,8 @@ pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
         }
 
         if (self.tile_set_showen) {
-            const tile_set = tile_map.tile_sets.items[self.selected_tile_set];
-            const texture = Game.textures.get(tile_set.path).?;
+            const tile_set = level.tile_map.tile_sets[self.selected_tile_set];
+            const texture = level.textures.get(tile_set.path).?;
             const rect = tile_set.getSourceRect(self.selected_texture);
             rl.drawTexture(texture, 0, 0, .white);
             rl.drawRectangleLinesEx(rect, 3, .blue);

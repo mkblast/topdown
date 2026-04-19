@@ -17,6 +17,7 @@ const Vector2 = rl.Vector2;
 
 const EntityManager = @import("EntityManager.zig");
 const Entity = @import("Entity.zig");
+const Level = @import("Level.zig");
 const LevelEditor = @import("LevelEditor.zig");
 
 io: Io,
@@ -27,14 +28,12 @@ guy_index: Entity.Index,
 camera: rl.Camera2D,
 state: State,
 level_editor: LevelEditor,
-level: LevelEditor.TileMap,
+level: ?Level,
 
 pub const State = enum {
     editor,
     game,
 };
-
-pub var textures: std.StringHashMap(rl.Texture2D) = undefined;
 
 const speed = 1000;
 const bullet_speed = 2500.0;
@@ -46,7 +45,6 @@ pub fn init(io: Io, gpa: Allocator, arena: *heap.ArenaAllocator) !Game {
     rl.setExitKey(.null);
     rl.setTargetFPS(60);
 
-    textures = .init(gpa);
     var manager: EntityManager = try .init(gpa);
     const guy = try manager.reserve(.guy);
 
@@ -63,16 +61,17 @@ pub fn init(io: Io, gpa: Allocator, arena: *heap.ArenaAllocator) !Game {
         .entity_manager = manager,
         .guy_index = guy,
         .state = .game,
-        .level_editor = try .init(gpa, "./assets/wall_sheet.png", 64, 16, 16),
-        .level = try .initFromFile(io, gpa, arena.allocator(), "./map.zon"),
+        .level_editor = .default,
+        .level = null,
     };
 }
 
 pub fn deinit(self: *Game) void {
     self.entity_manager.deinit(self.gpa);
     self.level_editor.deinit();
-    std.zon.parse.free(self.gpa, self.level);
-    textures.deinit();
+    if (self.level) |*level| {
+        level.deinit();
+    }
     rl.closeWindow();
 }
 
@@ -86,15 +85,22 @@ pub fn run(self: *Game) !void {
             // -- Global --
             if (rl.isKeyPressed(.tab)) {
                 switch (self.state) {
+                    // From game to editor.
                     .game => {
+                        if (self.level) |level| {
+                            if (self.level_editor.level == null) {
+                                try self.level_editor.loadLevelFromFile(self.io, self.gpa, level.path);
+                            }
+                        }
                         const guy = self.entity_manager.get(self.guy_index);
                         self.level_editor.camera_target = guy.pos;
                         self.state = .editor;
                     },
+                    // From editor to game.
                     .editor => {
-                        try self.level_editor.reload(self.io, "map.zon");
-                        std.zon.parse.free(self.gpa, self.level);
-                        self.level = try .initFromFile(self.io, self.gpa, self.arena.allocator(), "map.zon");
+                        if (self.level) |*level| {
+                            try level.reload(self.io);
+                        }
                         self.state = .game;
                     },
                 }
@@ -102,6 +108,15 @@ pub fn run(self: *Game) !void {
 
             switch (self.state) {
                 .game => {
+                    if (rl.isKeyPressed(.l)) {
+                        if (self.level == null) {
+                            self.level = Level.initFromFile(self.io, self.gpa, "map.zon") catch |e| blk: {
+                                log.err("{t}", .{e});
+                                break :blk null;
+                            };
+                        }
+                    }
+
                     const guy = self.entity_manager.get(self.guy_index);
 
                     // -- Guy --
@@ -139,6 +154,10 @@ pub fn run(self: *Game) !void {
 
                 .editor => {
                     const level_editor = &self.level_editor;
+                    if (rl.isKeyPressed(.n)) {
+                        try level_editor.initLevel(self.gpa, "map.zon", 64, 64);
+                        try level_editor.addTileSet("./assets/wall_sheet.png", 64);
+                    }
 
                     var dir: Vector2 = .zero();
                     if (rl.isKeyDown(.d)) {
@@ -156,13 +175,14 @@ pub fn run(self: *Game) !void {
 
                     level_editor.camera_target = .add(level_editor.camera_target, .scale(.normalize(dir), 10));
                     const selected_tile_set = level_editor.selected_tile_set;
-                    if (level_editor.tile_map) |tile_map| {
+                    if (level_editor.level) |level| {
+                        const tile_map = level.tile_map;
                         const map_width = tile_map.width;
                         const map_height = tile_map.height;
 
-                        const tile_size = tile_map.tile_sets.items[selected_tile_set].tile_size;
-                        const tile_set_width = tile_map.tile_sets.items[selected_tile_set].width;
-                        const tile_set_height = tile_map.tile_sets.items[selected_tile_set].height;
+                        const tile_size = tile_map.tile_sets[selected_tile_set].tile_size;
+                        const tile_set_width = tile_map.tile_sets[selected_tile_set].width;
+                        const tile_set_height = tile_map.tile_sets[selected_tile_set].height;
                         const tiles = tile_set_width * tile_set_height;
 
                         if (rl.isKeyPressed(.right)) {
@@ -206,12 +226,7 @@ pub fn run(self: *Game) !void {
                         }
 
                         if (rl.isKeyPressed(.enter)) {
-                            var buf: [2048]u8 = undefined;
-                            var save_file = try Io.Dir.cwd().createFile(self.io, "map.zon", .{});
-                            var file_writer = save_file.writer(self.io, &buf);
-                            try std.zon.stringify.serialize(tile_map, .{}, &file_writer.interface);
-                            try file_writer.flush();
-                            log.info("Map Saved", .{});
+                            try self.level_editor.saveLevel(self.io);
                         }
                     }
                 },
@@ -293,12 +308,13 @@ pub fn run(self: *Game) !void {
             {
                 self.camera.begin();
                 defer self.camera.end();
-                if (self.level_editor.tile_map) |tile_map| {
+                if (self.level_editor.level) |level| {
+                    const tile_map = level.tile_map;
                     const rect: rl.Rectangle = .{
                         .x = 0,
                         .y = 0,
-                        .width = @floatFromInt(tile_map.width * tile_map.tile_sets.items[0].tile_size),
-                        .height = @floatFromInt(tile_map.height * tile_map.tile_sets.items[0].tile_size),
+                        .width = @floatFromInt(tile_map.width * tile_map.tile_sets[0].tile_size),
+                        .height = @floatFromInt(tile_map.height * tile_map.tile_sets[0].tile_size),
                     };
                     rl.drawRectangleLinesEx(rect, 3, .white);
                 }
@@ -312,7 +328,9 @@ pub fn run(self: *Game) !void {
                 self.camera.begin();
                 defer self.camera.end();
 
-                self.level.draw();
+                if (self.level) |level| {
+                    level.draw();
+                }
 
                 // -- entities --
                 for (self.entity_manager.entities.items) |*e| {
