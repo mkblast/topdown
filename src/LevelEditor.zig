@@ -4,6 +4,7 @@ const std = @import("std");
 const Io = std.Io;
 
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 
 const rl = @import("raylib");
 const Game = @import("Game.zig");
@@ -14,6 +15,7 @@ arena: std.heap.ArenaAllocator,
 tile_map: ?TileMap = null,
 tile_set_showen: bool = true,
 selected_texture: u32 = 0,
+selected_tile_set: u32 = 0,
 camera_target: Vector2 = .zero(),
 
 pub const Kind = enum {
@@ -24,22 +26,26 @@ pub const Kind = enum {
 
 pub const Tile = struct {
     texture_id: u32,
+    tile_set_id: u32,
     kind: Kind,
 
-    const default: Tile = .{ .kind = .empty, .texture_id = 0 };
+    const default: Tile = .{ .kind = .empty, .texture_id = 0, .tile_set_id = 0 };
 };
 
 pub const TileMap = struct {
-    tile_set: TileSet,
+    tile_sets: ArrayList(TileSet),
     width: u32,
     height: u32,
     tiles: []Tile,
 
     fn init(gpa: Allocator, path: [:0]const u8, tile_size: u32, width: u32, height: u32) !TileMap {
+        var tile_sets: ArrayList(TileSet) = .empty;
+        try tile_sets.append(gpa, try .init(path, tile_size));
+
         const tiles = try gpa.alloc(Tile, width * height);
         @memset(tiles, .default);
         return .{
-            .tile_set = try .init(path, tile_size),
+            .tile_sets = tile_sets,
             .width = width,
             .height = height,
             .tiles = tiles,
@@ -57,13 +63,15 @@ pub const TileMap = struct {
     }
 
     pub fn draw(self: TileMap) void {
-        const texture = Game.textures.get(self.tile_set.path).?;
-        const tile_size = self.tile_set.tile_size;
-
         for (self.tiles, 0..) |tile, i| {
             if (tile.kind == .empty) continue;
-            const pos: Vector2 = .init(@floatFromInt((i % self.width) * tile_size), @floatFromInt((i / self.width) * self.tile_set.tile_size));
-            const texture_rectid = self.tile_set.getSourceRect(tile.texture_id);
+            const tile_set = self.tile_sets.items[tile.tile_set_id];
+
+            const texture = Game.textures.get(tile_set.path).?;
+            const tile_size = tile_set.tile_size;
+
+            const pos: Vector2 = .init(@floatFromInt((i % self.width) * tile_size), @floatFromInt((i / self.width) * tile_set.tile_size));
+            const texture_rectid = tile_set.getSourceRect(tile.texture_id);
             texture.drawRec(texture_rectid, pos, .white);
         }
     }
@@ -137,7 +145,8 @@ pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
 
             tile_map.draw();
 
-            const tile_size = tile_map.tile_set.tile_size;
+            const tile_set = tile_map.tile_sets.items[self.selected_tile_set];
+            const tile_size = tile_set.tile_size;
             const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), camera);
             if (mouse_pos.x >= 0 and mouse_pos.y >= 0) {
                 const mouse_x: u32 = @trunc(mouse_pos.x);
@@ -154,8 +163,9 @@ pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
         }
 
         if (self.tile_set_showen) {
-            const texture = Game.textures.get(tile_map.tile_set.path).?;
-            const rect = tile_map.tile_set.getSourceRect(self.selected_texture);
+            const tile_set = tile_map.tile_sets.items[self.selected_tile_set];
+            const texture = Game.textures.get(tile_set.path).?;
+            const rect = tile_set.getSourceRect(self.selected_texture);
             rl.drawTexture(texture, 0, 0, .white);
             rl.drawRectangleLinesEx(rect, 3, .blue);
         }

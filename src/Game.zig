@@ -155,14 +155,14 @@ pub fn run(self: *Game) !void {
                     }
 
                     level_editor.camera_target = .add(level_editor.camera_target, .scale(.normalize(dir), 10));
-
+                    const selected_tile_set = level_editor.selected_tile_set;
                     if (level_editor.tile_map) |tile_map| {
                         const map_width = tile_map.width;
                         const map_height = tile_map.height;
 
-                        const tile_size = tile_map.tile_set.tile_size;
-                        const tile_set_width = tile_map.tile_set.width;
-                        const tile_set_height = tile_map.tile_set.height;
+                        const tile_size = tile_map.tile_sets.items[selected_tile_set].tile_size;
+                        const tile_set_width = tile_map.tile_sets.items[selected_tile_set].width;
+                        const tile_set_height = tile_map.tile_sets.items[selected_tile_set].height;
                         const tiles = tile_set_width * tile_set_height;
 
                         if (rl.isKeyPressed(.right)) {
@@ -196,7 +196,11 @@ pub fn run(self: *Game) !void {
                                 const gy = mouse_y / tile_size;
                                 if (gx < map_width and gy < map_height) {
                                     const y = gy * map_height;
-                                    tile_map.tiles[gx + y] = .{ .texture_id = level_editor.selected_texture, .kind = .wall };
+                                    tile_map.tiles[gx + y] = .{
+                                        .texture_id = level_editor.selected_texture,
+                                        .tile_set_id = selected_tile_set,
+                                        .kind = .wall,
+                                    };
                                 }
                             }
                         }
@@ -293,8 +297,8 @@ pub fn run(self: *Game) !void {
                     const rect: rl.Rectangle = .{
                         .x = 0,
                         .y = 0,
-                        .width = @floatFromInt(tile_map.width * tile_map.tile_set.tile_size),
-                        .height = @floatFromInt(tile_map.height * tile_map.tile_set.tile_size),
+                        .width = @floatFromInt(tile_map.width * tile_map.tile_sets.items[0].tile_size),
+                        .height = @floatFromInt(tile_map.height * tile_map.tile_sets.items[0].tile_size),
                     };
                     rl.drawRectangleLinesEx(rect, 3, .white);
                 }
