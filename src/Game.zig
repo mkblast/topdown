@@ -110,7 +110,7 @@ pub fn run(self: *Game) !void {
                 .game => {
                     if (rl.isKeyPressed(.l)) {
                         if (self.level == null) {
-                            self.level = Level.initFromFile(self.io, self.gpa, "map.zon") catch |e| blk: {
+                            self.level = Level.initFromFile(self.io, self.gpa, "map.json") catch |e| blk: {
                                 log.err("{t}", .{e});
                                 break :blk null;
                             };
@@ -156,8 +156,9 @@ pub fn run(self: *Game) !void {
                     const level_editor = &self.level_editor;
                     if (rl.isKeyPressed(.n)) {
                         level_editor.deinit();
-                        try level_editor.initLevel(self.gpa, "map.zon", 64, 64);
+                        try level_editor.initLevel(self.gpa, "map.json", 10, 10);
                         try level_editor.addTileSet("./assets/wall_sheet.png", 64);
+                        try level_editor.addTileSet("./assets/tileset_gray.png", 16);
                     }
 
                     var dir: Vector2 = .zero();
@@ -329,8 +330,10 @@ pub fn run(self: *Game) !void {
                 self.camera.begin();
                 defer self.camera.end();
 
-                if (self.level) |level| {
-                    level.draw();
+                if (self.state == .game) {
+                    if (self.level) |level| {
+                        level.draw();
+                    }
                 }
 
                 // -- entities --

@@ -93,7 +93,7 @@ pub fn initFromFile(io: Io, gpa: Allocator, save_path: [:0]const u8) !Level {
     errdefer arena.deinit();
 
     const content = try Io.Dir.cwd().readFileAllocOptions(io, save_path, arena.allocator(), .unlimited, .of(u8), 0);
-    const tile_map = try std.zon.parse.fromSliceAlloc(TileMap, arena.allocator(), content, null, .{});
+    const tile_map = try std.json.parseFromSliceLeaky(TileMap, arena.allocator(), content, .{});
 
     var textures: StringHashMap(rl.Texture2D) = .empty;
     for (tile_map.tile_sets) |tile_set| {
@@ -116,7 +116,7 @@ pub fn reload(self: *Level, io: Io) !void {
     errdefer self.arena.deinit();
 
     const content = try Io.Dir.cwd().readFileAllocOptions(io, self.path, self.arena.allocator(), .unlimited, .of(u8), 0);
-    const tile_map = try std.zon.parse.fromSliceAlloc(TileMap, self.arena.allocator(), content, null, .{});
+    const tile_map = try std.json.parseFromSliceLeaky(TileMap, self.arena.allocator(), content, .{});
 
     var textures: StringHashMap(rl.Texture2D) = .empty;
     for (tile_map.tile_sets) |tile_set| {

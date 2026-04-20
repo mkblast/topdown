@@ -57,7 +57,8 @@ pub fn saveLevel(self: LevelEditor, io: Io) !void {
         var buf: [2048]u8 = undefined;
         var save_file = try Io.Dir.cwd().createFile(io, level.path, .{});
         var file_writer = save_file.writer(io, &buf);
-        try std.zon.stringify.serialize(level.tile_map, .{}, &file_writer.interface);
+        const fmt = std.json.fmt(level.tile_map, .{.whitespace = .indent_4});
+        try file_writer.interface.print("{f}", .{fmt});
         try file_writer.flush();
         log.info("Map Saved", .{});
     }
