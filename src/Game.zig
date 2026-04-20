@@ -158,7 +158,7 @@ pub fn run(self: *Game) !void {
                         level_editor.deinit();
                         try level_editor.initLevel(self.gpa, "map.json", 10, 10);
                         try level_editor.addTileSet("./assets/wall_sheet.png", 64);
-                        try level_editor.addTileSet("./assets/tileset_gray.png", 16);
+                        try level_editor.addTileSet("./assets/tileset_gray.png", 64);
                     }
 
                     var dir: Vector2 = .zero();
@@ -176,37 +176,48 @@ pub fn run(self: *Game) !void {
                     }
 
                     level_editor.camera_target = .add(level_editor.camera_target, .scale(.normalize(dir), 10));
-                    const selected_tile_set = level_editor.selected_tile_set;
+
                     if (level_editor.level) |level| {
+                        const selected_tile_set = level.tile_map.getTileSetFromTileId(self.level_editor.selected_tile_id);
+                        const first_tile_id = selected_tile_set.first_tile_id;
                         const tile_map = level.tile_map;
                         const map_width = tile_map.width;
                         const map_height = tile_map.height;
 
-                        const tile_size = tile_map.tile_sets[selected_tile_set].tile_size;
-                        const tile_set_width = tile_map.tile_sets[selected_tile_set].width;
-                        const tile_set_height = tile_map.tile_sets[selected_tile_set].height;
-                        const tiles = tile_set_width * tile_set_height;
+                        const tile_size = selected_tile_set.tile_size;
+                        const tile_set_width = selected_tile_set.width;
+                        const tile_count = selected_tile_set.tile_count;
+
+
+                        if (rl.isKeyPressed(.j)) {
+                            level_editor.selected_tile_id = selected_tile_set.tile_count + 1;
+                        }
+                        if (rl.isKeyPressed(.k)) {
+                            level_editor.selected_tile_id = selected_tile_set.tile_count - 1;
+                        }
+
+                        const last_tile_id_in_tile_set = first_tile_id + selected_tile_set.tile_count - 1;
 
                         if (rl.isKeyPressed(.right)) {
-                            level_editor.selected_texture = (level_editor.selected_texture + 1) % tiles;
+                            level_editor.selected_tile_id += 1;
+                            if (level_editor.selected_tile_id > last_tile_id_in_tile_set) level_editor.selected_tile_id = first_tile_id;
+
                         }
 
                         if (rl.isKeyPressed(.left)) {
-                            if (level_editor.selected_texture == 0)
-                                level_editor.selected_texture = tiles - 1
-                            else
-                                level_editor.selected_texture = (level_editor.selected_texture - 1) % tiles;
+                            level_editor.selected_tile_id -= 1;
+                            if (level_editor.selected_tile_id == first_tile_id - 1) level_editor.selected_tile_id = last_tile_id_in_tile_set;
                         }
 
                         if (rl.isKeyPressed(.down)) {
-                            level_editor.selected_texture = (level_editor.selected_texture + tile_set_width) % tiles;
+                            level_editor.selected_tile_id = level_editor.selected_tile_id + tile_set_width;
+                            if (level_editor.selected_tile_id > last_tile_id_in_tile_set) level_editor.selected_tile_id -= tile_count;
                         }
 
                         if (rl.isKeyPressed(.up)) {
-                            if (level_editor.selected_texture < tiles)
-                                level_editor.selected_texture = (tiles - tile_set_width) + level_editor.selected_texture
-                            else
-                                level_editor.selected_texture = (level_editor.selected_texture - tile_set_width) % tiles;
+                            if (level_editor.selected_tile_id <= tile_set_width + first_tile_id - 1)
+                                level_editor.selected_tile_id = last_tile_id_in_tile_set - (tile_set_width + first_tile_id - 1 - level_editor.selected_tile_id)
+                            else level_editor.selected_tile_id -= tile_set_width;
                         }
 
                         if (rl.isMouseButtonDown(.left)) {
@@ -218,11 +229,7 @@ pub fn run(self: *Game) !void {
                                 const gy = mouse_y / tile_size;
                                 if (gx < map_width and gy < map_height) {
                                     const y = gy * map_height;
-                                    tile_map.tiles[gx + y] = .{
-                                        .texture_id = level_editor.selected_texture,
-                                        .tile_set_id = selected_tile_set,
-                                        .kind = .wall,
-                                    };
+                                    tile_map.tiles[gx + y] = level_editor.selected_tile_id;
                                 }
                             }
                         }

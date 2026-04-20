@@ -18,15 +18,13 @@ const Vector2 = rl.Vector2;
 
 level: ?Level,
 tile_set_showen: bool,
-selected_texture: u32,
-selected_tile_set: u32,
+selected_tile_id: u32,
 camera_target: Vector2,
 
 pub const default: LevelEditor = .{
     .level = null,
     .tile_set_showen = true,
-    .selected_texture = 0,
-    .selected_tile_set = 0,
+    .selected_tile_id = 1,
     .camera_target = .zero(),
 };
 
@@ -45,9 +43,15 @@ pub fn addTileSet(self: *LevelEditor, tile_set_path: [:0]const u8, tile_size: u3
         const texture: rl.Texture2D = try .init(tile_set_path);
         try level.textures.put(arena, tile_set_path, texture);
 
+        const first_tile_id = blk: {
+            if (level.tile_map.tile_sets.len == 0) break :blk 1;
+
+            const last_tile_set = level.tile_map.tile_sets[level.tile_map.tile_sets.len - 1];
+            break :blk last_tile_set.tile_count + 1;
+        };
         const old_len = level.tile_map.tile_sets.len;
         level.tile_map.tile_sets = try arena.realloc(level.tile_map.tile_sets, old_len + 1);
-        level.tile_map.tile_sets[old_len] = .init(texture, tile_set_path, tile_size);
+        level.tile_map.tile_sets[old_len] = .init(texture, tile_set_path, tile_size, first_tile_id);
     }
 }
 
@@ -85,7 +89,7 @@ pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
 
             level.draw();
 
-            const tile_set = level.tile_map.tile_sets[self.selected_tile_set];
+            const tile_set = level.tile_map.getTileSetFromTileId(self.selected_tile_id);
             const tile_size = tile_set.tile_size;
             const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), camera);
             if (mouse_pos.x >= 0 and mouse_pos.y >= 0) {
@@ -103,9 +107,9 @@ pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
         }
 
         if (self.tile_set_showen) {
-            const tile_set = level.tile_map.tile_sets[self.selected_tile_set];
+            const tile_set = level.tile_map.getTileSetFromTileId(self.selected_tile_id);
             const texture = level.textures.get(tile_set.path).?;
-            const rect = tile_set.getSourceRect(self.selected_texture);
+            const rect = tile_set.getSourceRect(self.selected_tile_id);
             rl.drawTexture(texture, 0, 0, .white);
             rl.drawRectangleLinesEx(rect, 3, .blue);
         }
