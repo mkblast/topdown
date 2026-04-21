@@ -83,6 +83,7 @@ pub fn run(self: *Game) !void {
         {
             const dt = rl.getFrameTime();
             // -- Global --
+            // Dirty piece of code... The state switching should be cleaner.
             if (rl.isKeyPressed(.tab)) {
                 switch (self.state) {
                     // From game to editor.
@@ -114,6 +115,7 @@ pub fn run(self: *Game) !void {
                                 log.err("{t}", .{e});
                                 break :blk null;
                             };
+                            log.info("Level loaded", .{});
                         }
                     }
 
@@ -156,7 +158,7 @@ pub fn run(self: *Game) !void {
                     const level_editor = &self.level_editor;
                     if (rl.isKeyPressed(.n)) {
                         level_editor.deinit();
-                        try level_editor.initLevel(self.gpa, "map.json", 10, 10);
+                        try level_editor.initLevel(self.gpa, "map.json", 100, 100);
                         try level_editor.addTileSet("./assets/wall_sheet.png", 64);
                         try level_editor.addTileSet("./assets/tileset_gray.png", 64);
                     }
@@ -175,7 +177,7 @@ pub fn run(self: *Game) !void {
                         dir.y = 1;
                     }
 
-                    level_editor.camera_target = .add(level_editor.camera_target, .scale(.normalize(dir), 10));
+                    level_editor.camera_target = .add(level_editor.camera_target, .scale(.normalize(dir), speed * dt));
 
                     if (level_editor.level) |level| {
                         const selected_tile_set = level.tile_map.getTileSetFromTileId(self.level_editor.selected_tile_id);
@@ -188,38 +190,40 @@ pub fn run(self: *Game) !void {
                         const tile_set_width = selected_tile_set.width;
                         const tile_count = selected_tile_set.tile_count;
 
-
+                        //TODO: this doesn't work like it should. fix it!!!
                         if (rl.isKeyPressed(.j)) {
-                            level_editor.selected_tile_id = selected_tile_set.tile_count + 1;
+                            level_editor.selected_tile_id = .new(selected_tile_set.tile_count + 1);
                         }
                         if (rl.isKeyPressed(.k)) {
-                            level_editor.selected_tile_id = selected_tile_set.tile_count - 1;
+                            level_editor.selected_tile_id = .new(selected_tile_set.tile_count - 1);
                         }
 
-                        const last_tile_id_in_tile_set = first_tile_id + selected_tile_set.tile_count - 1;
+                        const last_tile_id_in_tile_set: Level.TileId = .new(first_tile_id.get() + selected_tile_set.tile_count - 1);
 
                         if (rl.isKeyPressed(.right)) {
-                            level_editor.selected_tile_id += 1;
-                            if (level_editor.selected_tile_id > last_tile_id_in_tile_set) level_editor.selected_tile_id = first_tile_id;
-
+                            level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() + 1);
+                            if (level_editor.selected_tile_id.get() > last_tile_id_in_tile_set.get()) level_editor.selected_tile_id = first_tile_id;
                         }
 
                         if (rl.isKeyPressed(.left)) {
-                            level_editor.selected_tile_id -= 1;
-                            if (level_editor.selected_tile_id == first_tile_id - 1) level_editor.selected_tile_id = last_tile_id_in_tile_set;
+                            level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() - 1);
+                            if (level_editor.selected_tile_id.get() == first_tile_id.get() - 1) level_editor.selected_tile_id = last_tile_id_in_tile_set;
                         }
 
                         if (rl.isKeyPressed(.down)) {
-                            level_editor.selected_tile_id = level_editor.selected_tile_id + tile_set_width;
-                            if (level_editor.selected_tile_id > last_tile_id_in_tile_set) level_editor.selected_tile_id -= tile_count;
+                            level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() + tile_set_width);
+                            if (level_editor.selected_tile_id.get() > last_tile_id_in_tile_set.get()) level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() - tile_count);
                         }
 
+                        //TODO: Figure out a better way to handle it...
                         if (rl.isKeyPressed(.up)) {
-                            if (level_editor.selected_tile_id <= tile_set_width + first_tile_id - 1)
-                                level_editor.selected_tile_id = last_tile_id_in_tile_set - (tile_set_width + first_tile_id - 1 - level_editor.selected_tile_id)
-                            else level_editor.selected_tile_id -= tile_set_width;
+                            if (level_editor.selected_tile_id.get() <= tile_set_width + first_tile_id.get() - 1)
+                                level_editor.selected_tile_id = .new(last_tile_id_in_tile_set.get() - (tile_set_width + first_tile_id.get() - 1 - level_editor.selected_tile_id.get()))
+                            else
+                                level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() - tile_set_width);
                         }
 
+                        //TODO: Investigate how to stop spamming in the same grid.
                         if (rl.isMouseButtonDown(.left)) {
                             const world_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera);
                             if (world_pos.x >= 0 and world_pos.y >= 0) {

@@ -18,16 +18,28 @@ textures: StringHashMap(rl.Texture2D),
 tile_map: TileMap,
 path: [:0]const u8,
 
+pub const TileId = enum(u32) {
+    _,
+
+    pub fn new(idx: usize) TileId {
+        return @enumFromInt(idx);
+    }
+
+    pub fn get(self: TileId) u32 {
+        return @intFromEnum(self);
+    }
+};
+
 pub const TileMap = struct {
     width: u32,
     height: u32,
     tile_sets: []TileSet,
     // We count from 1. 0 is empty tile.
-    tiles: []u32,
+    tiles: []TileId,
 
-    pub fn getTileSetFromTileId(self: TileMap, tile_id: u32) TileSet {
+    pub fn getTileSetFromTileId(self: TileMap, tile_id: TileId) TileSet {
         for (self.tile_sets) |tile_set| {
-            if (tile_id >= tile_set.first_tile_id and tile_id < tile_set.first_tile_id + tile_set.tile_count) return tile_set;
+            if (tile_id.get() >= tile_set.first_tile_id.get() and tile_id.get() < tile_set.first_tile_id.get() + tile_set.tile_count) return tile_set;
         }
         unreachable;
     }
@@ -38,10 +50,10 @@ pub const TileSet = struct {
     tile_size: u32,
     width: u32,
     height: u32,
-    first_tile_id: u32,
+    first_tile_id: TileId,
     tile_count: u32,
 
-    pub fn init(texture: rl.Texture2D, path: [:0]const u8, tile_size: u32, first_tile_id: u32) TileSet {
+    pub fn init(texture: rl.Texture2D, path: [:0]const u8, tile_size: u32, first_tile_id: TileId) TileSet {
         const width: u32 = @intCast(texture.width);
         const height: u32 = @intCast(texture.height);
         return .{
@@ -54,8 +66,8 @@ pub const TileSet = struct {
         };
     }
 
-    pub fn getSourceRect(self: TileSet, id: u32) rl.Rectangle {
-        const tile_id = id - self.first_tile_id;
+    pub fn getSourceRect(self: TileSet, id: TileId) rl.Rectangle {
+        const tile_id = id.get() - self.first_tile_id.get();
         const col = tile_id % self.width;
         const row = tile_id / self.width;
 
@@ -71,8 +83,8 @@ pub const TileSet = struct {
 pub fn init(gpa: Allocator, save_path: [:0]const u8, width: u32, height: u32) !Level {
     var arena: std.heap.ArenaAllocator = .init(gpa);
 
-    const tiles = try arena.allocator().alloc(u32, width * height);
-    @memset(tiles, 0);
+    const tiles = try arena.allocator().alloc(TileId, width * height);
+    @memset(tiles, .new(0));
 
     const tile_map: TileMap = .{
         .width = width,
@@ -137,14 +149,13 @@ pub fn deinit(self: *Level) void {
 
 pub fn draw(self: Level) void {
     for (self.tile_map.tiles, 0..) |tile_id, i| {
-        if (tile_id == 0) continue;
+        if (tile_id.get() == 0) continue;
         const tile_set = self.tile_map.getTileSetFromTileId(tile_id);
 
         const texture = self.textures.get(tile_set.path).?;
         const tile_size = tile_set.tile_size;
 
         const pos: Vector2 = .init(@floatFromInt((i % self.tile_map.width) * tile_size), @floatFromInt((i / self.tile_map.width) * tile_set.tile_size));
-        log.info("{any}", .{tile_id});
         const texture_rectid = tile_set.getSourceRect(tile_id);
         texture.drawRec(texture_rectid, pos, .white);
     }

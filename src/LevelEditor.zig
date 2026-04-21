@@ -18,13 +18,13 @@ const Vector2 = rl.Vector2;
 
 level: ?Level,
 tile_set_showen: bool,
-selected_tile_id: u32,
+selected_tile_id: Level.TileId,
 camera_target: Vector2,
 
 pub const default: LevelEditor = .{
     .level = null,
     .tile_set_showen = true,
-    .selected_tile_id = 1,
+    .selected_tile_id = .new(1),
     .camera_target = .zero(),
 };
 
@@ -43,11 +43,11 @@ pub fn addTileSet(self: *LevelEditor, tile_set_path: [:0]const u8, tile_size: u3
         const texture: rl.Texture2D = try .init(tile_set_path);
         try level.textures.put(arena, tile_set_path, texture);
 
-        const first_tile_id = blk: {
-            if (level.tile_map.tile_sets.len == 0) break :blk 1;
+        const first_tile_id: Level.TileId = blk: {
+            if (level.tile_map.tile_sets.len == 0) break :blk .new(1);
 
             const last_tile_set = level.tile_map.tile_sets[level.tile_map.tile_sets.len - 1];
-            break :blk last_tile_set.tile_count + 1;
+            break :blk .new(last_tile_set.tile_count + 1);
         };
         const old_len = level.tile_map.tile_sets.len;
         level.tile_map.tile_sets = try arena.realloc(level.tile_map.tile_sets, old_len + 1);
@@ -61,7 +61,7 @@ pub fn saveLevel(self: LevelEditor, io: Io) !void {
         var buf: [2048]u8 = undefined;
         var save_file = try Io.Dir.cwd().createFile(io, level.path, .{});
         var file_writer = save_file.writer(io, &buf);
-        const fmt = std.json.fmt(level.tile_map, .{.whitespace = .indent_4});
+        const fmt = std.json.fmt(level.tile_map, .{});
         try file_writer.interface.print("{f}", .{fmt});
         try file_writer.flush();
         log.info("Map Saved", .{});
