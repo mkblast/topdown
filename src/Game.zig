@@ -158,9 +158,25 @@ pub fn run(self: *Game) !void {
                     const level_editor = &self.level_editor;
                     if (rl.isKeyPressed(.n)) {
                         level_editor.deinit();
-                        try level_editor.initLevel(self.gpa, "map.json", 100, 100);
+                        try level_editor.initLevelWithTileMap(self.gpa, "map.json", 100, 100);
                         try level_editor.addTileSet("./assets/wall_sheet.png", 64);
                         try level_editor.addTileSet("./assets/tileset_gray.png", 64);
+                    }
+
+                    if (rl.isKeyPressed(.t)) {
+                        try level_editor.addTileMapLayer(100, 100);
+                        log.info("TileMap created", .{});
+                    }
+
+
+                    //TODO: Clearly stupid. However, we roll for now...
+                    if (rl.isKeyPressed(.x)) {
+                        level_editor.selected_tile_map += 1;
+                        try level_editor.addTileSet("./assets/TX Tileset Grass.png", 32);
+                    }
+
+                    if (rl.isKeyPressed(.z)) {
+                        level_editor.selected_tile_map -= 1;
                     }
 
                     var dir: Vector2 = .zero();
@@ -180,66 +196,71 @@ pub fn run(self: *Game) !void {
                     level_editor.camera_target = .add(level_editor.camera_target, .scale(.normalize(dir), speed * dt));
 
                     if (level_editor.level) |level| {
-                        const selected_tile_set = level.tile_map.getTileSetFromTileId(self.level_editor.selected_tile_id);
-                        const first_tile_id = selected_tile_set.first_tile_id;
-                        const tile_map = level.tile_map;
-                        const map_width = tile_map.width;
-                        const map_height = tile_map.height;
+                        const tile_map = level.tile_map_layers[level_editor.selected_tile_map];
 
-                        const tile_size = selected_tile_set.tile_size;
-                        const tile_set_width = selected_tile_set.width;
-                        const tile_count = selected_tile_set.tile_count;
+                        // We do nothing if we have no tile_sets...
+                        // GO ADD ONE FIRST!!1!
+                        if (tile_map.tile_sets.len != 0) {
+                            const selected_tile_set = tile_map.getTileSetFromTileId(self.level_editor.selected_tile_id);
+                            const first_tile_id = selected_tile_set.first_tile_id;
+                            const map_width = tile_map.width;
+                            const map_height = tile_map.height;
 
-                        //TODO: this doesn't work like it should. fix it!!!
-                        if (rl.isKeyPressed(.j)) {
-                            level_editor.selected_tile_id = .new(selected_tile_set.tile_count + 1);
-                        }
-                        if (rl.isKeyPressed(.k)) {
-                            level_editor.selected_tile_id = .new(selected_tile_set.tile_count - 1);
-                        }
+                            const tile_size = selected_tile_set.tile_size;
+                            const tile_set_width = selected_tile_set.width;
+                            const tile_count = selected_tile_set.tile_count;
 
-                        const last_tile_id_in_tile_set: Level.TileId = .new(first_tile_id.get() + selected_tile_set.tile_count - 1);
+                            //TODO: this doesn't work like it should. fix it!!!
+                            if (rl.isKeyPressed(.j)) {
+                                level_editor.selected_tile_id = .new(selected_tile_set.tile_count + 1);
+                            }
+                            if (rl.isKeyPressed(.k)) {
+                                level_editor.selected_tile_id = .new(selected_tile_set.tile_count - 1);
+                            }
 
-                        if (rl.isKeyPressed(.right)) {
-                            level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() + 1);
-                            if (level_editor.selected_tile_id.get() > last_tile_id_in_tile_set.get()) level_editor.selected_tile_id = first_tile_id;
-                        }
+                            const last_tile_id_in_tile_set: Level.TileId = .new(first_tile_id.get() + selected_tile_set.tile_count - 1);
 
-                        if (rl.isKeyPressed(.left)) {
-                            level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() - 1);
-                            if (level_editor.selected_tile_id.get() == first_tile_id.get() - 1) level_editor.selected_tile_id = last_tile_id_in_tile_set;
-                        }
+                            if (rl.isKeyPressed(.right)) {
+                                level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() + 1);
+                                if (level_editor.selected_tile_id.get() > last_tile_id_in_tile_set.get()) level_editor.selected_tile_id = first_tile_id;
+                            }
 
-                        if (rl.isKeyPressed(.down)) {
-                            level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() + tile_set_width);
-                            if (level_editor.selected_tile_id.get() > last_tile_id_in_tile_set.get()) level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() - tile_count);
-                        }
+                            if (rl.isKeyPressed(.left)) {
+                                level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() - 1);
+                                if (level_editor.selected_tile_id.get() == first_tile_id.get() - 1) level_editor.selected_tile_id = last_tile_id_in_tile_set;
+                            }
 
-                        //TODO: Figure out a better way to handle it...
-                        if (rl.isKeyPressed(.up)) {
-                            if (level_editor.selected_tile_id.get() <= tile_set_width + first_tile_id.get() - 1)
-                                level_editor.selected_tile_id = .new(last_tile_id_in_tile_set.get() - (tile_set_width + first_tile_id.get() - 1 - level_editor.selected_tile_id.get()))
-                            else
-                                level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() - tile_set_width);
-                        }
+                            if (rl.isKeyPressed(.down)) {
+                                level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() + tile_set_width);
+                                if (level_editor.selected_tile_id.get() > last_tile_id_in_tile_set.get()) level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() - tile_count);
+                            }
 
-                        //TODO: Investigate how to stop spamming in the same grid.
-                        if (rl.isMouseButtonDown(.left)) {
-                            const world_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera);
-                            if (world_pos.x >= 0 and world_pos.y >= 0) {
-                                const mouse_x: u32 = @trunc(world_pos.x);
-                                const mouse_y: u32 = @trunc(world_pos.y);
-                                const gx = mouse_x / tile_size;
-                                const gy = mouse_y / tile_size;
-                                if (gx < map_width and gy < map_height) {
-                                    const y = gy * map_height;
-                                    tile_map.tiles[gx + y] = level_editor.selected_tile_id;
+                            //TODO: Figure out a better way to handle it...
+                            if (rl.isKeyPressed(.up)) {
+                                if (level_editor.selected_tile_id.get() <= tile_set_width + first_tile_id.get() - 1)
+                                    level_editor.selected_tile_id = .new(last_tile_id_in_tile_set.get() - (tile_set_width + first_tile_id.get() - 1 - level_editor.selected_tile_id.get()))
+                                else
+                                    level_editor.selected_tile_id = .new(level_editor.selected_tile_id.get() - tile_set_width);
+                            }
+
+                            //TODO: Investigate how to stop spamming in the same grid.
+                            if (rl.isMouseButtonDown(.left)) {
+                                const world_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera);
+                                if (world_pos.x >= 0 and world_pos.y >= 0) {
+                                    const mouse_x: u32 = @trunc(world_pos.x);
+                                    const mouse_y: u32 = @trunc(world_pos.y);
+                                    const gx = mouse_x / tile_size;
+                                    const gy = mouse_y / tile_size;
+                                    if (gx < map_width and gy < map_height) {
+                                        const y = gy * map_width;
+                                        tile_map.tiles[gx + y] = level_editor.selected_tile_id;
+                                    }
                                 }
                             }
-                        }
 
-                        if (rl.isKeyPressed(.enter)) {
-                            try self.level_editor.saveLevel(self.io);
+                            if (rl.isKeyPressed(.enter)) {
+                                try self.level_editor.saveLevel(self.io);
+                            }
                         }
                     }
                 },
@@ -322,14 +343,18 @@ pub fn run(self: *Game) !void {
                 self.camera.begin();
                 defer self.camera.end();
                 if (self.level_editor.level) |level| {
-                    const tile_map = level.tile_map;
-                    const rect: rl.Rectangle = .{
-                        .x = 0,
-                        .y = 0,
-                        .width = @floatFromInt(tile_map.width * tile_map.tile_sets[0].tile_size),
-                        .height = @floatFromInt(tile_map.height * tile_map.tile_sets[0].tile_size),
-                    };
-                    rl.drawRectangleLinesEx(rect, 3, .white);
+                    const tile_map = level.tile_map_layers[self.level_editor.selected_tile_map];
+
+                    //TODO: We might want to store tile_size on the tile_map and remove multiple tile sizes in a layer.
+                    if (tile_map.tile_sets.len != 0) {
+                        const rect: rl.Rectangle = .{
+                            .x = 0,
+                            .y = 0,
+                            .width = @floatFromInt(tile_map.width * tile_map.tile_sets[0].tile_size),
+                            .height = @floatFromInt(tile_map.height * tile_map.tile_sets[0].tile_size),
+                        };
+                        rl.drawRectangleLinesEx(rect, 3, .white);
+                    }
                 }
             }
 

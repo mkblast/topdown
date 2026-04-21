@@ -15,7 +15,7 @@ const Vector2 = rl.Vector2;
 
 arena: std.heap.ArenaAllocator,
 textures: StringHashMap(rl.Texture2D),
-tile_map: TileMap,
+tile_map_layers: []TileMap,
 path: [:0]const u8,
 
 pub const TileId = enum(u32) {
@@ -86,7 +86,8 @@ pub fn init(gpa: Allocator, save_path: [:0]const u8, width: u32, height: u32) !L
     const tiles = try arena.allocator().alloc(TileId, width * height);
     @memset(tiles, .new(0));
 
-    const tile_map: TileMap = .{
+    const tile_map_layers = try arena.allocator().alloc(TileMap, 1);
+    tile_map_layers[0] = .{
         .width = width,
         .height = height,
         .tile_sets = &.{},
@@ -95,7 +96,7 @@ pub fn init(gpa: Allocator, save_path: [:0]const u8, width: u32, height: u32) !L
 
     return .{
         .arena = arena,
-        .tile_map = tile_map,
+        .tile_map_layers = tile_map_layers,
         .textures = .empty,
         .path = save_path,
     };
@@ -106,18 +107,20 @@ pub fn initFromFile(io: Io, gpa: Allocator, save_path: [:0]const u8) !Level {
     errdefer arena.deinit();
 
     const content = try Io.Dir.cwd().readFileAllocOptions(io, save_path, arena.allocator(), .unlimited, .of(u8), 0);
-    const tile_map = try std.json.parseFromSliceLeaky(TileMap, arena.allocator(), content, .{});
+    const tile_map_layers = try std.json.parseFromSliceLeaky([]TileMap, arena.allocator(), content, .{});
 
     var textures: StringHashMap(rl.Texture2D) = .empty;
-    for (tile_map.tile_sets) |tile_set| {
-        const texture: rl.Texture2D = try .init(tile_set.path);
-        _ = try textures.getOrPutValue(arena.allocator(), tile_set.path, texture);
+    for (tile_map_layers) |tile_map| {
+        for (tile_map.tile_sets) |tile_set| {
+            const texture: rl.Texture2D = try .init(tile_set.path);
+            _ = try textures.getOrPutValue(arena.allocator(), tile_set.path, texture);
+        }
     }
 
     return .{
         .arena = arena,
         .path = save_path,
-        .tile_map = tile_map,
+        .tile_map_layers = tile_map_layers,
         .textures = textures,
     };
 }
@@ -129,15 +132,17 @@ pub fn reload(self: *Level, io: Io) !void {
     errdefer self.arena.deinit();
 
     const content = try Io.Dir.cwd().readFileAllocOptions(io, self.path, self.arena.allocator(), .unlimited, .of(u8), 0);
-    const tile_map = try std.json.parseFromSliceLeaky(TileMap, self.arena.allocator(), content, .{});
+    const tile_map_layers = try std.json.parseFromSliceLeaky([]TileMap, self.arena.allocator(), content, .{});
 
     var textures: StringHashMap(rl.Texture2D) = .empty;
-    for (tile_map.tile_sets) |tile_set| {
-        const texture: rl.Texture2D = try .init(tile_set.path);
-        _ = try textures.getOrPutValue(self.arena.allocator(), tile_set.path, texture);
+    for (tile_map_layers) |tile_map| {
+        for (tile_map.tile_sets) |tile_set| {
+            const texture: rl.Texture2D = try .init(tile_set.path);
+            _ = try textures.getOrPutValue(self.arena.allocator(), tile_set.path, texture);
+        }
     }
 
-    self.tile_map = tile_map;
+    self.tile_map_layers = tile_map_layers;
     self.textures = textures;
 }
 
@@ -148,15 +153,17 @@ pub fn deinit(self: *Level) void {
 }
 
 pub fn draw(self: Level) void {
-    for (self.tile_map.tiles, 0..) |tile_id, i| {
-        if (tile_id.get() == 0) continue;
-        const tile_set = self.tile_map.getTileSetFromTileId(tile_id);
+    for (self.tile_map_layers) |tile_map| {
+        for (tile_map.tiles, 0..) |tile_id, i| {
+            if (tile_id.get() == 0) continue;
+            const tile_set = tile_map.getTileSetFromTileId(tile_id);
 
-        const texture = self.textures.get(tile_set.path).?;
-        const tile_size = tile_set.tile_size;
+            const texture = self.textures.get(tile_set.path).?;
+            const tile_size = tile_set.tile_size;
 
-        const pos: Vector2 = .init(@floatFromInt((i % self.tile_map.width) * tile_size), @floatFromInt((i / self.tile_map.width) * tile_set.tile_size));
-        const texture_rectid = tile_set.getSourceRect(tile_id);
-        texture.drawRec(texture_rectid, pos, .white);
+            const pos: Vector2 = .init(@floatFromInt((i % tile_map.width) * tile_size), @floatFromInt((i / tile_map.width) * tile_set.tile_size));
+            const texture_rectid = tile_set.getSourceRect(tile_id);
+            texture.drawRec(texture_rectid, pos, .white);
+        }
     }
 }
