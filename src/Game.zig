@@ -31,7 +31,8 @@ level_editor: LevelEditor,
 level: ?Level,
 
 pub const State = enum {
-    editor,
+    level_editor,
+    tile_editor,
     game,
 };
 
@@ -39,6 +40,7 @@ const speed = 1000;
 const bullet_speed = 2500.0;
 var screen_width: i32 = 1280;
 var screen_height: i32 = 720;
+const scale_size = 300;
 
 pub fn init(io: Io, gpa: Allocator, arena: *heap.ArenaAllocator) !Game {
     rl.initWindow(1280, 720, "topdown");
@@ -46,12 +48,12 @@ pub fn init(io: Io, gpa: Allocator, arena: *heap.ArenaAllocator) !Game {
     rl.setTargetFPS(60);
 
     var manager: EntityManager = try .init(gpa);
-    const guy = try manager.reserve(.guy);
+    const guy = try manager.appendKind(.guy);
 
     return .{
         .camera = .{
             .offset = .init(@floatFromInt(@divTrunc(screen_width, 2)), @floatFromInt(@divTrunc(screen_height, 2))),
-            .target = .init(0, 0),
+            .target = manager.get(guy).pos,
             .zoom = 1,
             .rotation = 0,
         },
@@ -82,6 +84,7 @@ pub fn run(self: *Game) !void {
         // Input:
         {
             const dt = rl.getFrameTime();
+
             // -- Global --
             // Dirty piece of code... The state switching should be cleaner.
             if (rl.isKeyPressed(.tab)) {
@@ -95,15 +98,35 @@ pub fn run(self: *Game) !void {
                         }
                         const guy = self.entity_manager.get(self.guy_index);
                         self.level_editor.camera_target = guy.pos;
-                        self.state = .editor;
+                        self.state = .level_editor;
                     },
                     // From editor to game.
-                    .editor => {
+                    .level_editor => {
                         if (self.level) |*level| {
                             try level.reload(self.io);
                         }
                         self.state = .game;
                     },
+                    else => {},
+                }
+            }
+
+            if (self.state == .tile_editor or self.state == .level_editor) {
+                if (rl.isKeyPressed(.e)) {
+                    switch (self.state) {
+                        .level_editor => {
+                            const selected_tile_map = self.level_editor.getSelectedTileMap();
+                            const current_tile_set = selected_tile_map.getTileSetFromTileId(self.level_editor.selected_tile_id);
+                            self.level_editor.tile_editor = try .init(current_tile_set);
+                            self.level_editor.tile_editor.?.selected_tile = self.level_editor.selected_tile_id;
+                            self.state = .tile_editor;
+                        },
+                        .tile_editor => {
+                            self.level_editor.tile_editor.?.deinit();
+                            self.state = .level_editor;
+                        },
+                        else => unreachable,
+                    }
                 }
             }
 
@@ -149,12 +172,12 @@ pub fn run(self: *Game) !void {
                             .life_time = .initStart(1),
                         };
 
-                        _ = try self.entity_manager.appened(bullet);
+                        _ = try self.entity_manager.append(bullet);
                         guy.shot_cooldown.start();
                     }
                 },
 
-                .editor => {
+                .level_editor => {
                     const level_editor = &self.level_editor;
                     if (rl.isKeyPressed(.n)) {
                         level_editor.deinit();
@@ -168,15 +191,16 @@ pub fn run(self: *Game) !void {
                         log.info("TileMap created", .{});
                     }
 
-
                     //TODO: Clearly stupid. However, we roll for now...
                     if (rl.isKeyPressed(.x)) {
                         level_editor.selected_tile_map += 1;
                         try level_editor.addTileSet("./assets/TX Tileset Grass.png", 32);
+                        level_editor.selected_tile_id = .new(1);
                     }
 
                     if (rl.isKeyPressed(.z)) {
                         level_editor.selected_tile_map -= 1;
+                        level_editor.selected_tile_id = .new(1);
                     }
 
                     var dir: Vector2 = .zero();
@@ -195,8 +219,8 @@ pub fn run(self: *Game) !void {
 
                     level_editor.camera_target = .add(level_editor.camera_target, .scale(.normalize(dir), speed * dt));
 
-                    if (level_editor.level) |level| {
-                        const tile_map = level.tile_map_layers[level_editor.selected_tile_map];
+                    if (level_editor.level) |_| {
+                        const tile_map = level_editor.getSelectedTileMap();
 
                         // We do nothing if we have no tile_sets...
                         // GO ADD ONE FIRST!!1!
@@ -264,6 +288,30 @@ pub fn run(self: *Game) !void {
                         }
                     }
                 },
+
+                .tile_editor => {
+                    if (self.level_editor.tile_editor) |*tile_editor| {
+                        const pos = rl.getMousePosition();
+                        const x: f32 = @floatFromInt(@divExact(screen_width, 2) - scale_size / 2);
+                        const y: f32 = @floatFromInt(@divExact(screen_height, 2) - scale_size / 2);
+                        const condition = (pos.x >= x and pos.x < x + scale_size) and (pos.y >= y and pos.y < y + scale_size);
+
+                        if (rl.isMouseButtonPressed(.left)) {
+                            log.info("{any}", .{condition});
+                            if (condition) tile_editor.point = pos;
+                        }
+
+                        if (rl.isMouseButtonDown(.left)) {
+                            tile_editor.release = pos;
+                            if (pos.x < x) tile_editor.release.x = x;
+                            if (pos.y < y) tile_editor.release.y = y;
+
+                            if (pos.x > x + scale_size) tile_editor.release.x = x + scale_size;
+                            if (pos.y > y + scale_size) tile_editor.release.y = y + scale_size;
+
+                        }
+                    }
+                },
             }
         }
 
@@ -317,9 +365,10 @@ pub fn run(self: *Game) !void {
                     }
                 },
 
-                .editor => {
+                .level_editor => {
                     self.camera.target = self.level_editor.camera_target;
                 },
+                .tile_editor => {},
             }
         }
 
@@ -339,11 +388,47 @@ pub fn run(self: *Game) !void {
             defer rl.endDrawing();
             rl.clearBackground(.black);
 
-            {
+            if (self.state == .tile_editor) {
+                if (self.level_editor.tile_editor) |tile_editor| {
+                    {
+                        const rect = tile_editor.tile_set.getSourceRect(tile_editor.selected_tile);
+
+                        const dest: rl.Rectangle = .{
+                            .width = scale_size,
+                            .height = scale_size,
+                            .x = @floatFromInt(@divExact(screen_width, 2) - scale_size / 2),
+                            .y = @floatFromInt(@divExact(screen_height, 2) - scale_size / 2),
+                        };
+
+                        rl.drawTexturePro(tile_editor.texture, rect, dest, .zero(), 0, .white);
+                        rl.drawCircleV(.init(@floatFromInt(@divExact(screen_width, 2)), @floatFromInt(@divExact(screen_height, 2))), 3, .white);
+                    }
+
+                    {
+                        const rect_x = @min(tile_editor.point.x, tile_editor.release.x);
+                        const rect_y = @min(tile_editor.point.y, tile_editor.release.y);
+
+                        const rect_width = @abs(tile_editor.point.x - tile_editor.release.x);
+                        const rect_height = @abs(tile_editor.point.y - tile_editor.release.y);
+
+                        const rect = rl.Rectangle{
+                            .x = rect_x,
+                            .y = rect_y,
+                            .width = rect_width,
+                            .height = rect_height,
+                        };
+
+                        rl.drawCircleV(tile_editor.point, 5, .white);
+                        rl.drawCircleV(tile_editor.release, 5, .white);
+
+                        rl.drawRectangleLinesEx(rect, 3, .red);
+                    }
+                }
+            } else {
                 self.camera.begin();
                 defer self.camera.end();
-                if (self.level_editor.level) |level| {
-                    const tile_map = level.tile_map_layers[self.level_editor.selected_tile_map];
+                if (self.level_editor.level) |_| {
+                    const tile_map = self.level_editor.getSelectedTileMap();
 
                     //TODO: We might want to store tile_size on the tile_map and remove multiple tile sizes in a layer.
                     if (tile_map.tile_sets.len != 0) {
@@ -356,26 +441,26 @@ pub fn run(self: *Game) !void {
                         rl.drawRectangleLinesEx(rect, 3, .white);
                     }
                 }
-            }
 
-            if (self.state == .editor) {
-                self.level_editor.draw(self.camera);
-            }
-
-            {
-                self.camera.begin();
-                defer self.camera.end();
-
-                if (self.state == .game) {
-                    if (self.level) |level| {
-                        level.draw();
-                    }
+                if (self.state == .level_editor) {
+                    self.level_editor.draw(self.camera);
                 }
 
-                // -- entities --
-                for (self.entity_manager.entities.items) |*e| {
-                    if (e.status != .alive) continue;
-                    e.draw();
+                {
+                    self.camera.begin();
+                    defer self.camera.end();
+
+                    if (self.state == .game) {
+                        if (self.level) |level| {
+                            level.draw();
+                        }
+                    }
+
+                    // -- entities --
+                    for (self.entity_manager.entities.items) |*e| {
+                        if (e.status != .alive) continue;
+                        e.draw();
+                    }
                 }
             }
 

@@ -6,7 +6,6 @@ const Io = std.Io;
 const log = std.log;
 
 const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
 
 const rl = @import("raylib");
 const Game = @import("Game.zig");
@@ -18,6 +17,7 @@ const TileId = Level.TileId;
 const Vector2 = rl.Vector2;
 
 level: ?Level,
+tile_editor: ?TileEditor,
 tile_set_showen: bool,
 selected_tile_id: TileId,
 selected_tile_map: usize,
@@ -25,10 +25,35 @@ camera_target: Vector2,
 
 pub const default: LevelEditor = .{
     .level = null,
+    .tile_editor = null,
     .tile_set_showen = true,
     .selected_tile_id = .new(1),
     .camera_target = .zero(),
     .selected_tile_map = 0,
+};
+
+const TileEditor = struct {
+    tile_set: TileSet,
+    texture: rl.Texture2D,
+    point: Vector2,
+    release: Vector2,
+    selected_tile: TileId,
+
+    pub fn init(tile_set: TileSet) !TileEditor {
+        const texture: rl.Texture2D = try .init(tile_set.path);
+
+        return .{
+            .tile_set = tile_set,
+            .texture = texture,
+            .point = .zero(),
+            .release = .zero(),
+            .selected_tile = .new(1),
+        };
+    }
+
+    pub fn deinit(self: TileEditor) void {
+        self.texture.unload();
+    }
 };
 
 pub fn initLevelWithTileMap(self: *LevelEditor, gpa: Allocator, save_path: [:0]const u8, width: u32, height: u32) !void {
@@ -62,7 +87,7 @@ pub fn addTileSet(self: *LevelEditor, tile_set_path: [:0]const u8, tile_size: u3
     if (self.level) |*level| {
         const arena = level.arena.allocator();
 
-        const tile_map = &level.tile_map_layers[self.selected_tile_map];
+        const tile_map = self.getSelectedTileMap();
 
         const texture: rl.Texture2D = try .init(tile_set_path);
         try level.textures.put(arena, tile_set_path, texture);
@@ -103,9 +128,17 @@ pub fn deinit(self: *LevelEditor) void {
     }
 }
 
+pub fn getSelectedTileMap(self: LevelEditor) *Level.TileMap {
+    if (self.level) |level| {
+        return &level.tile_map_layers[self.selected_tile_map];
+    }
+
+    unreachable;
+}
+
 pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
     if (self.level) |level| {
-        const tile_map = level.tile_map_layers[self.selected_tile_map];
+        const tile_map = self.getSelectedTileMap();
         if (tile_map.tile_sets.len != 0) {
             {
                 camera.begin();

@@ -7,7 +7,6 @@ const log = std.log;
 
 const Allocator = std.mem.Allocator;
 
-const ArrayList = std.ArrayList;
 const StringHashMap = std.StringHashMapUnmanaged;
 
 const rl = @import("raylib");
