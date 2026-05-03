@@ -116,7 +116,8 @@ pub fn run(self: *Game) !void {
                     switch (self.state) {
                         .level_editor => {
                             const selected_tile_map = self.level_editor.getSelectedTileMap();
-                            const current_tile_set = selected_tile_map.getTileSetFromTileId(self.level_editor.selected_tile_id);
+                            const level = self.level_editor.level.?;
+                            const current_tile_set = selected_tile_map.getTileSetFromTileId(level.tile_set_map ,self.level_editor.selected_tile_id);
                             self.level_editor.tile_editor = try .init(current_tile_set);
                             self.level_editor.tile_editor.?.selected_tile = self.level_editor.selected_tile_id;
                             self.state = .tile_editor;
@@ -182,8 +183,8 @@ pub fn run(self: *Game) !void {
                     if (rl.isKeyPressed(.n)) {
                         level_editor.deinit();
                         try level_editor.initLevelWithTileMap(self.gpa, "map.json", 100, 100);
-                        try level_editor.addTileSet("./assets/wall_sheet.png", 64);
-                        try level_editor.addTileSet("./assets/tileset_gray.png", 64);
+                        try level_editor.addTileSet("wall_sheet.json", "./assets/wall_sheet.png", 64);
+                        try level_editor.addTileSet("tileset_gray.json", "./assets/tileset_gray.png", 64);
                     }
 
                     if (rl.isKeyPressed(.t)) {
@@ -194,7 +195,7 @@ pub fn run(self: *Game) !void {
                     //TODO: Clearly stupid. However, we roll for now...
                     if (rl.isKeyPressed(.x)) {
                         level_editor.selected_tile_map += 1;
-                        try level_editor.addTileSet("./assets/TX Tileset Grass.png", 32);
+                        try level_editor.addTileSet("TX_Tileset_Grass.json","./assets/TX_Tileset_Grass.png", 32);
                         level_editor.selected_tile_id = .new(1);
                     }
 
@@ -219,13 +220,13 @@ pub fn run(self: *Game) !void {
 
                     level_editor.camera_target = .add(level_editor.camera_target, .scale(.normalize(dir), speed * dt));
 
-                    if (level_editor.level) |_| {
+                    if (level_editor.level) |level| {
                         const tile_map = level_editor.getSelectedTileMap();
 
                         // We do nothing if we have no tile_sets...
                         // GO ADD ONE FIRST!!1!
                         if (tile_map.tile_sets.len != 0) {
-                            const selected_tile_set = tile_map.getTileSetFromTileId(self.level_editor.selected_tile_id);
+                            const selected_tile_set = tile_map.getTileSetFromTileId(level.tile_set_map, self.level_editor.selected_tile_id);
                             const first_tile_id = selected_tile_set.first_tile_id;
                             const map_width = tile_map.width;
                             const map_height = tile_map.height;
@@ -297,7 +298,6 @@ pub fn run(self: *Game) !void {
                         const condition = (pos.x >= x and pos.x < x + scale_size) and (pos.y >= y and pos.y < y + scale_size);
 
                         if (rl.isMouseButtonPressed(.left)) {
-                            log.info("{any}", .{condition});
                             if (condition) tile_editor.point = pos;
                         }
 
@@ -427,16 +427,17 @@ pub fn run(self: *Game) !void {
             } else {
                 self.camera.begin();
                 defer self.camera.end();
-                if (self.level_editor.level) |_| {
+                if (self.level_editor.level) |level| {
                     const tile_map = self.level_editor.getSelectedTileMap();
 
                     //TODO: We might want to store tile_size on the tile_map and remove multiple tile sizes in a layer.
                     if (tile_map.tile_sets.len != 0) {
+                        const tile_set = level.tile_set_map.get(tile_map.tile_sets[0].tile_set_path).?;
                         const rect: rl.Rectangle = .{
                             .x = 0,
                             .y = 0,
-                            .width = @floatFromInt(tile_map.width * tile_map.tile_sets[0].tile_size),
-                            .height = @floatFromInt(tile_map.height * tile_map.tile_sets[0].tile_size),
+                            .width = @floatFromInt(tile_map.width * tile_set.tile_size),
+                            .height = @floatFromInt(tile_map.height * tile_set.tile_size),
                         };
                         rl.drawRectangleLinesEx(rect, 3, .white);
                     }
