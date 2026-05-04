@@ -33,20 +33,22 @@ pub const TileId = enum(u32) {
 pub const TileMap = struct {
     width: u32,
     height: u32,
-    tile_sets: []struct {
-        first_tile_id: TileId,
-        tile_set_path: []const u8,
-    },
+    tile_sets: []LevelTileSet,
     // We count from 1. 0 is empty tile.
     tiles: []TileId,
 
-    pub fn getTileSetFromTileId(self: TileMap, tile_set_map: StringHashMap(TileSet), tile_id: TileId) TileSet {
+    pub fn getTileSetFromTileId(self: TileMap, tile_set_map: StringHashMap(TileSet), tile_id: TileId) LevelTileSet {
         for (self.tile_sets) |tile_set| {
-            const tile_set_struct = tile_set_map.get(tile_set.tile_set_path).?;
-            if (tile_id.get() >= tile_set.first_tile_id.get() and tile_id.get() < tile_set.first_tile_id.get() + tile_set_struct.tile_count) return tile_set_struct;
+            const level_tile_set = tile_set_map.get(tile_set.tile_set_path).?;
+            if (tile_id.get() >= tile_set.first_tile_id.get() and tile_id.get() < tile_set.first_tile_id.get() + level_tile_set.tile_count) return tile_set;
         }
         unreachable;
     }
+};
+
+pub const LevelTileSet = struct {
+    first_tile_id: TileId,
+    tile_set_path: []const u8,
 };
 
 pub const TileSet = struct {
@@ -54,10 +56,9 @@ pub const TileSet = struct {
     tile_size: u32,
     width: u32,
     height: u32,
-    first_tile_id: TileId,
     tile_count: u32,
 
-    pub fn init(texture: rl.Texture2D, texture_path: [:0]const u8, tile_size: u32, first_tile_id: TileId) TileSet {
+    pub fn init(texture: rl.Texture2D, texture_path: [:0]const u8, tile_size: u32) TileSet {
         const width: u32 = @intCast(texture.width);
         const height: u32 = @intCast(texture.height);
         return .{
@@ -65,21 +66,7 @@ pub const TileSet = struct {
             .tile_size = tile_size,
             .width = width / tile_size,
             .height = height / tile_size,
-            .first_tile_id = first_tile_id,
             .tile_count = (width / tile_size) * (height / tile_size),
-        };
-    }
-
-    pub fn getSourceRect(self: TileSet, id: TileId) rl.Rectangle {
-        const tile_id = id.get() - self.first_tile_id.get();
-        const col = tile_id % self.width;
-        const row = tile_id / self.width;
-
-        return .{
-            .x = @floatFromInt(col * self.tile_size),
-            .y = @floatFromInt(row * self.tile_size),
-            .width = @floatFromInt(self.tile_size),
-            .height = @floatFromInt(self.tile_size),
         };
     }
 };
@@ -170,17 +157,38 @@ pub fn deinit(self: *Level) void {
     self.arena.deinit();
 }
 
+pub fn getRelativeTileIdToLevelTileSet(level_tile_set: LevelTileSet, id: TileId) TileId {
+    const first_tile_id = level_tile_set.first_tile_id;
+    return .new(id.get() - first_tile_id.get());
+}
+
+pub fn getSourceRect(tile_set: TileSet, tile_id: TileId) rl.Rectangle {
+    const col = tile_id.get() % tile_set.width;
+    const row = tile_id.get() / tile_set.width;
+
+    return .{
+        .x = @floatFromInt(col * tile_set.tile_size),
+        .y = @floatFromInt(row * tile_set.tile_size),
+        .width = @floatFromInt(tile_set.tile_size),
+        .height = @floatFromInt(tile_set.tile_size),
+    };
+}
+
 pub fn draw(self: Level) void {
     for (self.tile_map_layers) |tile_map| {
         for (tile_map.tiles, 0..) |tile_id, i| {
             if (tile_id.get() == 0) continue;
-            const tile_set = tile_map.getTileSetFromTileId(self.tile_set_map, tile_id);
+            const level_tile_set = tile_map.getTileSetFromTileId(self.tile_set_map, tile_id);
+            const tile_set = self.tile_set_map.get(level_tile_set.tile_set_path).?;
 
             const texture = self.textures.get(tile_set.texture_path).?;
             const tile_size = tile_set.tile_size;
 
             const pos: Vector2 = .init(@floatFromInt((i % tile_map.width) * tile_size), @floatFromInt((i / tile_map.width) * tile_set.tile_size));
-            const texture_rectid = tile_set.getSourceRect(tile_id);
+
+
+            const relative_tile_id = Level.getRelativeTileIdToLevelTileSet(level_tile_set, tile_id);
+            const texture_rectid = Level.getSourceRect(tile_set, relative_tile_id);
             texture.drawRec(texture_rectid, pos, .white);
         }
     }

@@ -33,13 +33,13 @@ pub const default: LevelEditor = .{
 };
 
 const TileEditor = struct {
-    tile_set: TileSet,
+    tile_set: *TileSet,
     texture: rl.Texture2D,
     point: Vector2,
     release: Vector2,
-    selected_tile: TileId,
+    selected_tile_id: TileId,
 
-    pub fn init(tile_set: TileSet) !TileEditor {
+    pub fn init(tile_set: *TileSet, selected_tile_id: TileId) !TileEditor {
         const texture: rl.Texture2D = try .init(tile_set.texture_path);
 
         return .{
@@ -47,7 +47,7 @@ const TileEditor = struct {
             .texture = texture,
             .point = .zero(),
             .release = .zero(),
-            .selected_tile = .new(1),
+            .selected_tile_id = selected_tile_id,
         };
     }
 
@@ -100,14 +100,13 @@ pub fn addTileSet(self: *LevelEditor, tile_set_path: [:0]const u8, texture_path:
         const texture: rl.Texture2D = try .init(texture_path);
         try level.textures.put(arena, texture_path, texture);
 
-        const tile_set: TileSet = .init(texture, texture_path, tile_size, first_tile_id);
+        const tile_set: TileSet = .init(texture, texture_path, tile_size);
         try level.tile_set_map.put(arena, tile_set_path, tile_set);
 
         const old_len = tile_map.tile_sets.len;
         tile_map.tile_sets = try arena.realloc(tile_map.tile_sets, old_len + 1);
         tile_map.tile_sets[old_len] = .{ .tile_set_path = tile_set_path, .first_tile_id = first_tile_id };
     }
-
 }
 
 pub fn saveLevel(self: LevelEditor, io: Io) !void {
@@ -127,13 +126,13 @@ pub fn saveLevel(self: LevelEditor, io: Io) !void {
 }
 
 fn saveTileSet(io: Io, tile_set_save_path: []const u8, tile_set: TileSet) !void {
-        var buf: [2048]u8 = undefined;
-        var save_file = try Io.Dir.cwd().createFile(io, tile_set_save_path, .{});
-        var file_writer = save_file.writer(io, &buf);
-        const fmt = std.json.fmt(tile_set, .{});
-        try file_writer.interface.print("{f}", .{fmt});
-        try file_writer.flush();
-        log.info("TileSet Saved", .{});
+    var buf: [2048]u8 = undefined;
+    var save_file = try Io.Dir.cwd().createFile(io, tile_set_save_path, .{});
+    var file_writer = save_file.writer(io, &buf);
+    const fmt = std.json.fmt(tile_set, .{});
+    try file_writer.interface.print("{f}", .{fmt});
+    try file_writer.flush();
+    log.info("TileSet Saved", .{});
 }
 
 pub fn reload(self: *LevelEditor, io: Io) !void {
@@ -159,6 +158,8 @@ pub fn getSelectedTileMap(self: LevelEditor) *Level.TileMap {
 pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
     if (self.level) |level| {
         const tile_map = self.getSelectedTileMap();
+        const level_tile_set = tile_map.getTileSetFromTileId(level.tile_set_map, self.selected_tile_id);
+        const tile_set = level.tile_set_map.get(level_tile_set.tile_set_path).?;
         if (tile_map.tile_sets.len != 0) {
             {
                 camera.begin();
@@ -166,7 +167,6 @@ pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
 
                 level.draw();
 
-                const tile_set = tile_map.getTileSetFromTileId(level.tile_set_map, self.selected_tile_id);
                 const tile_size = tile_set.tile_size;
                 const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), camera);
                 if (mouse_pos.x >= 0 and mouse_pos.y >= 0) {
@@ -184,9 +184,9 @@ pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
             }
 
             if (self.tile_set_showen) {
-                const tile_set = tile_map.getTileSetFromTileId(level.tile_set_map, self.selected_tile_id);
                 const texture = level.textures.get(tile_set.texture_path).?;
-                const rect = tile_set.getSourceRect(self.selected_tile_id);
+                const relative_tile_id = Level.getRelativeTileIdToLevelTileSet(level_tile_set, self.selected_tile_id);
+                const rect = Level.getSourceRect(tile_set, relative_tile_id);
                 rl.drawTexture(texture, 0, 0, .white);
                 rl.drawRectangleLinesEx(rect, 3, .blue);
             }
