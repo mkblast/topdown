@@ -145,7 +145,7 @@ pub fn run(self: *Game) !void {
                         }
                     }
 
-                    const guy = self.entity_manager.get(self.guy_index);
+                    const guy = self.entity_manager.getPtr(self.guy_index);
 
                     // -- Guy --
                     if (rl.isKeyDown(.right) or rl.isKeyDown(.d)) {
@@ -354,7 +354,7 @@ pub fn run(self: *Game) !void {
 
                     // --- Camera ---
                     {
-                        const guy = self.entity_manager.get(self.guy_index);
+                        const guy = self.entity_manager.getPtr(self.guy_index);
                         const smoothness: f32 = 20.0;
 
                         self.camera.target.x = math.lerp(self.camera.target.x, guy.pos.x + 25, 1.0 - @exp(-smoothness * dt));

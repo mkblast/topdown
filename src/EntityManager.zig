@@ -48,7 +48,11 @@ pub fn append(self: *EntityManager, e: Entity) !Index {
     return .new(self.entities.items.len - 1);
 }
 
-pub fn get(self: EntityManager, idx: Index) *Entity {
+pub fn get(self: EntityManager, idx: Index) Entity {
+    return self.entities.items[idx.get()];
+}
+
+pub fn getPtr(self: EntityManager, idx: Index) *Entity {
     return &self.entities.items[idx.get()];
 }
 
