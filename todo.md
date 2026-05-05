@@ -1,0 +1,12 @@
+- [x] Level Abstaction.
+- [x] investigate memory leak when overriding something idk....
+- [x] investigate rendering order.
+- [x] Rework Tile system.
+- [x] navigate tile_sets.
+- [x] distinct numbers.
+- [x] Layers.
+- [ ] Fix bug where switching layers doens't reset selected_tile_id of the previuse layer.
+- [ ] Props to tile_set. Like a way to add collision layers and other custom fields (HARD!!!! (maybe)).
+- [ ] Rendring pipeline.
+- [ ] Ui.
+- [ ] message queue.
