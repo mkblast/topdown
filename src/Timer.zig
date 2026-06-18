@@ -17,23 +17,23 @@ pub fn initStart(duration: f32) Timer {
     };
 }
 
-pub fn update(self: *Timer, dt: f32) void {
-    if (self.remaining > 0) {
-        self.remaining -= dt;
-        if (self.remaining < 0) self.remaining = 0;
+pub fn update(timer: *Timer, dt: f32) void {
+    if (timer.remaining > 0) {
+        timer.remaining -= dt;
+        if (timer.remaining < 0) timer.remaining = 0;
     }
 }
 
-pub fn start(self: *Timer) void {
-    self.remaining = self.duration;
+pub fn start(timer: *Timer) void {
+    timer.remaining = timer.duration;
 }
 
-pub fn isDone(self: Timer) bool {
-    return self.remaining <= 0;
+pub fn isDone(timer: Timer) bool {
+    return timer.remaining <= 0;
 }
 
-pub fn progress(self: Timer) f32 {
-    if (self.duration == 0) return 1.0;
-    const p = 1.0 - (self.remaining / self.duration);
+pub fn progress(timer: Timer) f32 {
+    if (timer.duration == 0) return 1.0;
+    const p = 1.0 - (timer.remaining / timer.duration);
     return @max(0.0, @min(1.0, p));
 }

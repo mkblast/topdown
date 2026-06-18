@@ -31,16 +31,16 @@ pub const default: LevelEditor = .{
     .selected_tile_map = 0,
 };
 
-pub fn initLevelWithTileMap(self: *LevelEditor, gpa: Allocator, save_path: [:0]const u8, width: u32, height: u32) !void {
-    self.level = try .init(gpa, save_path, width, height);
+pub fn initLevelWithTileMap(editor: *LevelEditor, gpa: Allocator, save_path: [:0]const u8, width: u32, height: u32) !void {
+    editor.level = try .init(gpa, save_path, width, height);
 }
 
-pub fn loadLevelFromFile(self: *LevelEditor, io: Io, gpa: Allocator, save_path: [:0]const u8) !void {
-    self.level = try .initFromFile(io, gpa, save_path);
+pub fn loadLevelFromFile(editor: *LevelEditor, io: Io, gpa: Allocator, save_path: [:0]const u8) !void {
+    editor.level = try .initFromFile(io, gpa, save_path);
 }
 
-pub fn addTileMapLayer(self: *LevelEditor, width: u32, height: u32) !void {
-    if (self.level) |*level| {
+pub fn addTileMapLayer(editor: *LevelEditor, width: u32, height: u32) !void {
+    if (editor.level) |*level| {
         const arena = level.arena.allocator();
 
         const tiles = try arena.alloc(TileId, width * height);
@@ -58,11 +58,11 @@ pub fn addTileMapLayer(self: *LevelEditor, width: u32, height: u32) !void {
     }
 }
 
-pub fn addTileSet(self: *LevelEditor, tile_set_path: [:0]const u8, tile_size: u32) !void {
-    if (self.level) |*level| {
+pub fn addTileSet(editor: *LevelEditor, tile_set_path: [:0]const u8, tile_size: u32) !void {
+    if (editor.level) |*level| {
         const arena = level.arena.allocator();
 
-        const tile_map = &level.tile_map_layers[self.selected_tile_map];
+        const tile_map = &level.tile_map_layers[editor.selected_tile_map];
 
         const texture: rl.Texture2D = try .init(tile_set_path);
         try level.textures.put(arena, tile_set_path, texture);
@@ -79,8 +79,8 @@ pub fn addTileSet(self: *LevelEditor, tile_set_path: [:0]const u8, tile_size: u3
     }
 }
 
-pub fn saveLevel(self: LevelEditor, io: Io) !void {
-    if (self.level) |level| {
+pub fn saveLevel(editor: LevelEditor, io: Io) !void {
+    if (editor.level) |level| {
         var buf: [2048]u8 = undefined;
         var save_file = try Io.Dir.cwd().createFile(io, level.path, .{});
         var file_writer = save_file.writer(io, &buf);
@@ -91,21 +91,21 @@ pub fn saveLevel(self: LevelEditor, io: Io) !void {
     }
 }
 
-pub fn reload(self: *LevelEditor, io: Io) !void {
-    if (self.level) |*level| {
+pub fn reload(editor: *LevelEditor, io: Io) !void {
+    if (editor.level) |*level| {
         try level.reload(io);
     }
 }
 
-pub fn deinit(self: *LevelEditor) void {
-    if (self.level) |*level| {
+pub fn deinit(editor: *LevelEditor) void {
+    if (editor.level) |*level| {
         level.deinit();
     }
 }
 
-pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
-    if (self.level) |level| {
-        const tile_map = level.tile_map_layers[self.selected_tile_map];
+pub fn draw(editor: LevelEditor, camera: rl.Camera2D) void {
+    if (editor.level) |level| {
+        const tile_map = level.tile_map_layers[editor.selected_tile_map];
         if (tile_map.tile_sets.len != 0) {
             {
                 camera.begin();
@@ -113,7 +113,7 @@ pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
 
                 level.draw();
 
-                const tile_set = tile_map.getTileSetFromTileId(self.selected_tile_id);
+                const tile_set = tile_map.getTileSetFromTileId(editor.selected_tile_id);
                 const tile_size = tile_set.tile_size;
                 const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), camera);
                 if (mouse_pos.x >= 0 and mouse_pos.y >= 0) {
@@ -130,10 +130,10 @@ pub fn draw(self: LevelEditor, camera: rl.Camera2D) void {
                 }
             }
 
-            if (self.tile_set_showen) {
-                const tile_set = tile_map.getTileSetFromTileId(self.selected_tile_id);
+            if (editor.tile_set_showen) {
+                const tile_set = tile_map.getTileSetFromTileId(editor.selected_tile_id);
                 const texture = level.textures.get(tile_set.path).?;
-                const rect = tile_set.getSourceRect(self.selected_tile_id);
+                const rect = tile_set.getSourceRect(editor.selected_tile_id);
                 rl.drawTexture(texture, 0, 0, .white);
                 rl.drawRectangleLinesEx(rect, 3, .blue);
             }

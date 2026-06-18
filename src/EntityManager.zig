@@ -6,6 +6,7 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
 const Entity = @import("Entity.zig");
+const Index = Entity.Index;
 const Kind = Entity.Kind;
 
 entities: ArrayList(Entity),
@@ -20,44 +21,48 @@ pub fn init(gpa: Allocator) !EntityManager {
     };
 }
 
-pub fn deinit(self: *EntityManager, gpa: Allocator) void {
-    self.entities.deinit(gpa);
-    self.empty_slots.deinit(gpa);
+pub fn deinit(manager: *EntityManager, gpa: Allocator) void {
+    manager.entities.deinit(gpa);
+    manager.empty_slots.deinit(gpa);
 }
 
-pub fn reserve(self: *EntityManager, kind: Kind) !Entity.Index {
+pub fn reserve(manager: *EntityManager, kind: Kind) Index {
     const e: Entity = .{ .kind = kind };
 
-    if (self.empty_slots.getLastOrNull()) |slot| {
-        self.entities.items[slot.get()] = e;
+    if (manager.empty_slots.getLastOrNull()) |slot| {
+        manager.entities.items[slot.get()] = e;
         return slot;
     }
 
-    try self.entities.appendBounded(e);
-    return .new(self.entities.items.len - 1);
+    manager.entities.appendBounded(e) catch @panic("OOM");
+    return .new(manager.entities.items.len - 1);
 }
 
-pub fn appened(self: *EntityManager, e: Entity) !Entity.Index {
-    if (self.empty_slots.pop()) |slot| {
-        self.entities.items[slot.get()] = e;
+pub fn appened(manager: *EntityManager, e: Entity) Index {
+    if (manager.empty_slots.pop()) |slot| {
+        manager.entities.items[slot.get()] = e;
         return slot;
     }
 
-    try self.entities.appendBounded(e);
-    return .new(self.entities.items.len - 1);
+    manager.entities.appendBounded(e) catch @panic("OOM");
+    return .new(manager.entities.items.len - 1);
 }
 
-pub fn get(self: EntityManager, idx: Entity.Index) *Entity {
-    return &self.entities.items[idx.get()];
+pub fn get(manager: EntityManager, idx: Entity.Index) Entity {
+    return manager.entities.items[idx.get()];
 }
 
-pub fn remove(self: *EntityManager, idx: Entity.Index) !void {
-    try self.empty_slots.appendBounded(idx);
+pub fn getPtr(manager: EntityManager, idx: Entity.Index) *Entity {
+    return &manager.entities.items[idx.get()];
 }
 
-pub fn findMany(self: EntityManager, arena: Allocator, kind: Kind) ![]Entity.Index {
-    var arr: ArrayList(Entity.Index) = try .initCapacity(arena, self.entities.items.len);
-    for (self.entities.items, 0..) |e, i| {
+pub fn remove(manager: *EntityManager, idx: Entity.Index) void {
+    manager.empty_slots.appendBounded(idx) catch @panic("OOM");
+}
+
+pub fn findMany(manager: EntityManager, arena: Allocator, kind: Kind) ![]Index {
+    var arr: ArrayList(Entity.Index) = .empty;
+    for (manager.entities.items, 0..) |e, i| {
         if (e.kind == kind) try arr.append(arena, .new(i));
     }
 
