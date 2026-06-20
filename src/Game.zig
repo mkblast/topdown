@@ -4,8 +4,9 @@ const builtin = @import("builtin");
 const std = @import("std");
 const Io = std.Io;
 
-const math = std.math;
 const log = std.log;
+const fmt = std.fmt;
+const math = std.math;
 const heap = std.heap;
 
 const Allocator = std.mem.Allocator;
@@ -35,15 +36,12 @@ pub const State = enum {
     game,
 };
 
-const speed = 1000;
-const bullet_speed = 2500.0;
-
 var screen_width: i32 = 1280;
 var screen_height: i32 = 720;
 
 pub fn init(io: Io, gpa: Allocator) !Game {
     rl.initWindow(1280, 720, "topdown");
-    rl.setExitKey(.null);
+    rl.setExitKey(.q);
     rl.setTargetFPS(60);
 
     var manager: EntityManager = try .init(gpa);
@@ -73,6 +71,7 @@ pub fn init(io: Io, gpa: Allocator) !Game {
 pub fn deinit(game: *Game) void {
     game.entity_manager.deinit(game.gpa);
     game.level_editor.deinit();
+    game.arena.deinit();
     if (game.level) |*level| level.deinit();
     rl.closeWindow();
 }
@@ -86,7 +85,7 @@ pub fn run(game: *Game) !void {
         try game.input(dt);
         game.update(dt);
         game.clean();
-        game.draw();
+        try game.draw();
     }
 }
 
@@ -133,29 +132,29 @@ pub fn input(game: *Game, dt: f32) !void {
             // -- Guy --
             guy.dir = .zero();
             if (rl.isKeyDown(.right) or rl.isKeyDown(.d)) {
-                guy.dir.x = 1;
+                guy.dir.x += 1;
             }
             if (rl.isKeyDown(.left) or rl.isKeyDown(.a)) {
-                guy.dir.x = -1;
+                guy.dir.x -= 1;
             }
             if (rl.isKeyDown(.up) or rl.isKeyDown(.w)) {
-                guy.dir.y = -1;
+                guy.dir.y -= 1;
             }
             if (rl.isKeyDown(.down) or rl.isKeyDown(.s)) {
-                guy.dir.y = 1;
+                guy.dir.y += 1;
             }
-            guy.vel = .scale(.normalize(guy.dir), speed);
+            guy.vel = .scale(.normalize(guy.dir), Entity.speed);
 
             guy.shot_cooldown.update(dt);
 
             // --- bullet ---
-            if (rl.isMouseButtonDown(.left) and guy.shot_cooldown.isDone()) {
+            if (rl.isMouseButtonDown(.left) and guy.shot_cooldown.isDone() and guy.ammo != 0) {
                 const mouse_world = rl.getScreenToWorld2D(rl.getMousePosition(), game.camera);
                 const dir: Vector2 = .subtract(mouse_world, guy.pos);
 
                 const bullet: Entity = .{
                     .kind = .bullet,
-                    .vel = .scale(.normalize(dir), bullet_speed),
+                    .vel = .scale(.normalize(dir), Entity.bullet_speed),
                     .pos = guy.pos,
                     .life_time = .initStart(1),
                 };
@@ -163,6 +162,13 @@ pub fn input(game: *Game, dt: f32) !void {
                 _ = game.entity_manager.appened(bullet);
 
                 guy.shot_cooldown.start();
+                guy.ammo -= 1;
+            }
+
+            guy.reload_timer.update(dt);
+            if (guy.reload_timer.isDone() and guy.ammo < Entity.max_ammo) {
+                guy.ammo += 1;
+                guy.reload_timer.start();
             }
         },
 
@@ -191,20 +197,12 @@ pub fn input(game: *Game, dt: f32) !void {
             }
 
             var dir: Vector2 = .zero();
-            if (rl.isKeyDown(.d)) {
-                dir.x = 1;
-            }
-            if (rl.isKeyDown(.a)) {
-                dir.x = -1;
-            }
-            if (rl.isKeyDown(.w)) {
-                dir.y = -1;
-            }
-            if (rl.isKeyDown(.s)) {
-                dir.y = 1;
-            }
+            if (rl.isKeyDown(.d)) dir.x = 1;
+            if (rl.isKeyDown(.a)) dir.x = -1;
+            if (rl.isKeyDown(.w)) dir.y = -1;
+            if (rl.isKeyDown(.s)) dir.y = 1;
 
-            level_editor.camera_target = .add(level_editor.camera_target, .scale(.normalize(dir), speed * dt));
+            level_editor.camera_target = .add(level_editor.camera_target, .scale(.normalize(dir), Entity.speed * dt));
 
             if (level_editor.level) |level| {
                 const tile_map = level.tile_map_layers[level_editor.selected_tile_map];
@@ -311,8 +309,8 @@ pub fn update(game: *Game, dt: f32) void {
                 const guy = game.entity_manager.getPtr(game.guy_index);
                 const smoothness: f32 = 20.0;
 
-                game.camera.target.x = math.lerp(game.camera.target.x, guy.pos.x + 25, 1.0 - @exp(-smoothness * dt));
-                game.camera.target.y = math.lerp(game.camera.target.y, guy.pos.y + 25, 1.0 - @exp(-smoothness * dt));
+                game.camera.target.x = math.lerp(game.camera.target.x, guy.pos.x, 1.0 - @exp(-smoothness * dt));
+                game.camera.target.y = math.lerp(game.camera.target.y, guy.pos.y, 1.0 - @exp(-smoothness * dt));
                 game.camera.offset = .init(@floatFromInt(@divTrunc(screen_width, 2)), @floatFromInt(@divTrunc(screen_height, 2)));
                 // rotation
                 const mouse_pos = rl.getMousePosition();
@@ -337,10 +335,12 @@ pub fn clean(game: *Game) void {
     }
 }
 
-pub fn draw(game: *Game) void {
+pub fn draw(game: *Game) !void {
     rl.beginDrawing();
     defer rl.endDrawing();
     rl.clearBackground(.black);
+
+    const guy = game.entity_manager.get(game.guy_index);
 
     {
         game.camera.begin();
@@ -386,5 +386,9 @@ pub fn draw(game: *Game) void {
     {
         // --- Screen Space (UI) ---
         rl.drawFPS(10, 10);
+
+        const ammo = try fmt.allocPrintSentinel(game.arena.allocator(), "ammo: {d:0>2}", .{guy.ammo}, 0);
+        const width = rl.measureText(ammo, 25);
+        rl.drawText(ammo, screen_width - width - 5, 10, 25, .white);
     }
 }

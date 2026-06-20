@@ -8,16 +8,25 @@ const Vector2 = rl.Vector2;
 
 const Timer = @import("Timer.zig");
 
+// Global
 kind: Kind = .default,
 pos: Vector2 = .zero(),
 vel: Vector2 = .zero(),
 dir: Vector2 = .zero(),
 rot: f32 = 0,
+status: Status = .alive,
+
+// Guy
 health: u32 = 100,
+ammo: u32 = max_ammo,
 life_time: Timer = .init(0),
+reload_timer: Timer = .init(0.3),
 shot_cooldown: Timer = .init(0.01),
 dash_cooldown: Timer = .init(0.02),
-status: Status = .alive,
+
+pub const speed = 1000;
+pub const bullet_speed = 2500.0;
+pub const max_ammo = 100;
 
 const Status = enum(u8) { alive, dead, empty };
 
